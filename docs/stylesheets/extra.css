@@ -1,0 +1,108 @@
+/* Custom styles for kindplane documentation */
+
+/* ============================================
+   Brand colours
+   ============================================ */
+:root {
+  --kindplane-purple: #7C3AED;
+  --kindplane-purple-light: #A78BFA;
+  --kindplane-purple-dark: #5B21B6;
+}
+
+/* ============================================
+   Custom admonition: kindplane
+   ============================================ */
+.md-typeset .admonition.kindplane,
+.md-typeset details.kindplane {
+  border-color: var(--kindplane-purple);
+}
+
+.md-typeset .kindplane > .admonition-title,
+.md-typeset .kindplane > summary {
+  background-color: rgba(124, 58, 237, 0.1);
+}
+
+.md-typeset .kindplane > .admonition-title::before,
+.md-typeset .kindplane > summary::before {
+  background-color: var(--kindplane-purple);
+  -webkit-mask-image: var(--md-admonition-icon--tip);
+          mask-image: var(--md-admonition-icon--tip);
+}
+
+/* ============================================
+   Custom admonition: crossplane
+   ============================================ */
+.md-typeset .admonition.crossplane,
+.md-typeset details.crossplane {
+  border-color: #7C3AED;
+}
+
+.md-typeset .crossplane > .admonition-title,
+.md-typeset .crossplane > summary {
+  background-color: rgba(124, 58, 237, 0.1);
+}
+
+.md-typeset .crossplane > .admonition-title::before,
+.md-typeset .crossplane > summary::before {
+  background-color: #7C3AED;
+  -webkit-mask-image: var(--md-admonition-icon--abstract);
+          mask-image: var(--md-admonition-icon--abstract);
+}
+
+/* ============================================
+   Announcement bar styling
+   ============================================ */
+.md-banner {
+  background-color: var(--kindplane-purple);
+  color: white;
+}
+
+.md-banner a {
+  color: white;
+}
+
+.md-banner a:hover {
+  color: var(--kindplane-purple-light);
+}
+
+/* ============================================
+   Code block enhancements
+   ============================================ */
+.md-typeset code {
+  border-radius: 4px;
+}
+
+/* ============================================
+   Navigation enhancements
+   ============================================ */
+.md-nav__link--active {
+  font-weight: 600;
+}
+
+/* ============================================
+   Feedback widget styling
+   ============================================ */
+.md-feedback {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--md-default-fg-color--lightest);
+}
+
+/* ============================================
+   Status badges
+   ============================================ */
+.md-status--new {
+  background-color: #10B981;
+}
+
+.md-status--deprecated {
+  background-color: #EF4444;
+}
+
+/* ============================================
+   Abbreviation tooltips
+   ============================================ */
+abbr[title] {
+  text-decoration: underline dotted;
+  cursor: help;
+}

@@ -1,6 +1,10 @@
 # kindplane
 
 <p align="center">
+  <img src="assets/logo.png" alt="kindplane logo" width="200">
+</p>
+
+<p align="center">
   <a href="https://github.com/kanzifucius/kindplane/actions/workflows/ci.yaml"><img src="https://github.com/kanzifucius/kindplane/actions/workflows/ci.yaml/badge.svg" alt="Build"></a>
   <a href="https://github.com/kanzifucius/kindplane/releases/latest"><img src="https://img.shields.io/github/v/release/kanzifucius/kindplane?style=flat" alt="Release"></a>
   <img src="https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat&logo=go" alt="Go Version">

@@ -15,44 +15,75 @@ theme:
   name: material
   language: en
   features:
-    - navigation.tabs
-    - navigation.tabs.sticky
-    - navigation.sections
-    - navigation.expand
-    - navigation.path
-    - navigation.top
-    - navigation.footer
-    - search.suggest
-    - search.highlight
-    - content.tabs.link
-    - content.code.copy
-    - content.code.annotate
-    - content.action.edit
-    - toc.follow
+    # Navigation
+    - navigation.instant          # Instant loading (XHR)
+    - navigation.instant.progress # Loading progress indicator
+    - navigation.tracking         # URL updates with anchor
+    - navigation.tabs             # Top-level sections as tabs
+    - navigation.tabs.sticky      # Tabs remain visible when scrolling
+    - navigation.sections         # Top-level sections rendered as groups
+    - navigation.expand           # Expand all collapsible sections
+    - navigation.path             # Breadcrumb navigation
+    - navigation.top              # Back-to-top button
+    - navigation.footer           # Previous/next page links in footer
+    - navigation.indexes          # Section index pages
+    # Search
+    - search.suggest              # Search suggestions
+    - search.highlight            # Highlight search terms on page
+    - search.share                # Shareable search links
+    # Header
+    - header.autohide             # Auto-hide header on scroll
+    # Content
+    - content.tabs.link           # Link content tabs
+    - content.code.copy           # Copy button on code blocks
+    - content.code.select         # Line selection in code blocks
+    - content.code.annotate       # Code annotations
+    - content.action.edit         # Edit this page link
+    - content.action.view         # View source link
+    - content.tooltips            # Improved tooltips
+    # Table of contents
+    - toc.follow                  # TOC follows scroll position
+    - toc.integrate               # TOC integrated into navigation
   palette:
-    - scheme: default
+    # Palette toggle for automatic mode (follows system preference)
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    # Palette toggle for light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
       primary: deep purple
       accent: purple
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
-    - scheme: slate
+    # Palette toggle for dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
       primary: deep purple
       accent: purple
       toggle:
         icon: material/brightness-4
-        name: Switch to light mode
+        name: Switch to system preference
   font:
     text: Inter
     code: JetBrains Mono
+  logo: assets/logo.png
+  favicon: assets/logo.png
   icon:
-    logo: material/kubernetes
     repo: fontawesome/brands/github
+  custom_dir: docs/overrides
 
 plugins:
-  - search
+  - search:
+      lang: en
+      separator: '[\s\-,:!=\[\]()"/]+|(?!\b)(?=[A-Z][a-z])|\.(?!\d)|&[lg]t;'
   - minify:
       minify_html: true
+  - privacy           # GDPR compliance - proxies external assets
+  - tags              # Tag support for pages
+  - social            # Auto-generate social cards for sharing
 
 markdown_extensions:
   - abbr
@@ -90,16 +121,53 @@ markdown_extensions:
   - pymdownx.tasklist:
       custom_checkbox: true
   - pymdownx.tilde
+  - pymdownx.snippets:
+      auto_append:
+        - includes/abbreviations.md
+
+extra_css:
+  - stylesheets/extra.css
 
 extra:
   # Version selector
   version:
     provider: mike
     default: latest
+  # Social links in footer
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/kanzifucius/kindplane
+      name: kindplane on GitHub
+  # Hide "Made with Material for MkDocs"
   generator: false
+  # Consent for cookies (GDPR)
+  consent:
+    title: Cookie consent
+    description: >-
+      We use cookies to recognise your repeated visits and preferences, as well
+      as to measure the effectiveness of our documentation and whether users
+      find what they're searching for. With your consent, you're helping us to
+      make our documentation better.
+  # Page feedback widget
+  analytics:
+    feedback:
+      title: Was this page helpful?
+      ratings:
+        - icon: material/emoticon-happy-outline
+          name: This page was helpful
+          data: 1
+          note: >-
+            Thanks for your feedback!
+        - icon: material/emoticon-sad-outline
+          name: This page could be improved
+          data: 0
+          note: >-
+            Thanks for your feedback! Help us improve by
+            <a href="https://github.com/kanzifucius/kindplane/issues/new" target="_blank" rel="noopener">opening an issue</a>.
+  # Status indicators for pages
+  status:
+    new: Recently added
+    deprecated: Deprecated
 
 nav:
   - Home: index.md
@@ -127,6 +195,24 @@ nav:
       - provider: commands/provider.md
       - chart: commands/chart.md
       - credentials: commands/credentials.md
+  - CLI Reference:
+      - Overview: cli-reference/index.md
+      - kindplane: cli-reference/kindplane.md
+      - kindplane init: cli-reference/kindplane_init.md
+      - kindplane validate: cli-reference/kindplane_validate.md
+      - kindplane up: cli-reference/kindplane_up.md
+      - kindplane down: cli-reference/kindplane_down.md
+      - kindplane status: cli-reference/kindplane_status.md
+      - kindplane dump: cli-reference/kindplane_dump.md
+      - kindplane provider: cli-reference/kindplane_provider.md
+      - kindplane provider add: cli-reference/kindplane_provider_add.md
+      - kindplane provider list: cli-reference/kindplane_provider_list.md
+      - kindplane chart: cli-reference/kindplane_chart.md
+      - kindplane chart install: cli-reference/kindplane_chart_install.md
+      - kindplane chart list: cli-reference/kindplane_chart_list.md
+      - kindplane chart uninstall: cli-reference/kindplane_chart_uninstall.md
+      - kindplane credentials: cli-reference/kindplane_credentials.md
+      - kindplane credentials configure: cli-reference/kindplane_credentials_configure.md
   - Guides:
       - Working with AWS: guides/aws.md
       - Working with Azure: guides/azure.md
