@@ -142,7 +142,7 @@ tasks:
         msg: "Failed to fetch from origin"
       - sh: '[ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ]'
         msg: "Local main is not up to date with origin/main. Run 'git pull' first."
-      - sh: '! git rev-parse "{{.TAG}}" >/dev/null 2>&1'
+      - sh: 'test -z "$(git tag -l "{{.TAG}}")"'
         msg: "Tag {{.TAG}} already exists"
     cmds:
       - echo "Creating release {{.TAG}} at commit $(git rev-parse --short HEAD)..."
