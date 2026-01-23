@@ -41,3 +41,7 @@ __debug_bin
 
 # MkDocs
 site/
+.cache/
+
+# Auto-generated CLI documentation
+docs/cli-reference/

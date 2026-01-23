@@ -159,6 +159,13 @@ tasks:
       - go install github.com/goreleaser/goreleaser@latest
 
   # Documentation tasks
+  docs:generate:
+    desc: Generate CLI reference documentation from Cobra commands
+    deps: [build]
+    cmds:
+      - go run ./cmd/gendocs
+      - echo "CLI documentation generated in docs/cli-reference/"
+
   docs:serve:
     desc: Serve documentation locally with hot reload (Docker)
     cmds:
