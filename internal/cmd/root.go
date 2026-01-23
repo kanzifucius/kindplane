@@ -14,11 +14,6 @@ import (
 )
 
 var (
-	// Version info set at build time
-	version   = "dev"
-	commit    = "none"
-	buildTime = "unknown"
-
 	// Global flags
 	cfgFile string
 	verbose bool
@@ -27,15 +22,8 @@ var (
 	cfg *config.Config
 )
 
-// SetVersionInfo sets the version information from build flags
-func SetVersionInfo(v, c, b string) {
-	version = v
-	commit = c
-	buildTime = b
-}
-
-// rootCmd represents the base command when called without any subcommands
-var rootCmd = &cobra.Command{
+// RootCmd represents the base command when called without any subcommands
+var RootCmd = &cobra.Command{
 	Use:   "kindplane",
 	Short: "Bootstrap Kind clusters with Crossplane",
 	Long: `kindplane is a CLI tool that helps developers quickly spin up
@@ -44,32 +32,25 @@ cloud providers, and other essential components.
 
 It automates the tedious process of setting up a local Kubernetes
 development environment with Crossplane for infrastructure management.`,
-	SilenceUsage:  true,
-	SilenceErrors: true,
-}
-
-// Execute adds all child commands to the root command and sets flags appropriately.
-func Execute() error {
-	return rootCmd.Execute()
 }
 
 func init() {
 	cobra.OnInitialize(initConfig)
 
 	// Global flags
-	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "config file (default is ./kindplane.yaml)")
-	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
+	// Note: Using -V for verbose to avoid conflict with fang's -v/--version
+	RootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "config file (default is ./kindplane.yaml)")
+	RootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "V", false, "verbose output")
 
 	// Add subcommands
-	rootCmd.AddCommand(initCmd)
-	rootCmd.AddCommand(upCmd)
-	rootCmd.AddCommand(downCmd)
-	rootCmd.AddCommand(statusCmd)
-	rootCmd.AddCommand(dumpCmd)
-	rootCmd.AddCommand(provider.ProviderCmd)
-	rootCmd.AddCommand(chart.ChartCmd)
-	rootCmd.AddCommand(credentials.CredentialsCmd)
-	rootCmd.AddCommand(versionCmd)
+	RootCmd.AddCommand(initCmd)
+	RootCmd.AddCommand(upCmd)
+	RootCmd.AddCommand(downCmd)
+	RootCmd.AddCommand(statusCmd)
+	RootCmd.AddCommand(dumpCmd)
+	RootCmd.AddCommand(provider.ProviderCmd)
+	RootCmd.AddCommand(chart.ChartCmd)
+	RootCmd.AddCommand(credentials.CredentialsCmd)
 }
 
 // initConfig reads in config file if set
@@ -125,17 +106,4 @@ func printVerbose(format string, a ...interface{}) {
 	if verbose {
 		fmt.Println(ui.Muted("[debug] "+format, a...))
 	}
-}
-
-// versionCmd represents the version command
-var versionCmd = &cobra.Command{
-	Use:   "version",
-	Short: "Print version information",
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println(ui.Title("kindplane"))
-		fmt.Println()
-		fmt.Println(ui.KeyValue("Version", version))
-		fmt.Println(ui.KeyValue("Commit", commit))
-		fmt.Println(ui.KeyValue("Built", buildTime))
-	},
 }

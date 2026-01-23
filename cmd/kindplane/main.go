@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"os"
 
+	"github.com/charmbracelet/fang"
 	"github.com/kanzi/kindplane/internal/cmd"
 )
 
@@ -14,8 +16,13 @@ var (
 )
 
 func main() {
-	cmd.SetVersionInfo(Version, Commit, BuildTime)
-	if err := cmd.Execute(); err != nil {
+	if err := fang.Execute(
+		context.Background(),
+		cmd.RootCmd,
+		fang.WithVersion(Version),
+		fang.WithCommit(Commit),
+		fang.WithNotifySignal(os.Interrupt, os.Kill),
+	); err != nil {
 		os.Exit(1)
 	}
 }
