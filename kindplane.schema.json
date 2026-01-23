@@ -1,0 +1,418 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/kanzi/kindplane/main/kindplane.schema.json",
+  "title": "Kindplane Configuration",
+  "description": "Configuration schema for kindplane.yaml - a tool for bootstrapping Kind clusters with Crossplane",
+  "type": "object",
+  "properties": {
+    "cluster": {
+      "$ref": "#/definitions/ClusterConfig"
+    },
+    "crossplane": {
+      "$ref": "#/definitions/CrossplaneConfig"
+    },
+    "credentials": {
+      "$ref": "#/definitions/CredentialsConfig"
+    },
+    "eso": {
+      "$ref": "#/definitions/ESOConfig"
+    },
+    "charts": {
+      "type": "array",
+      "description": "Additional Helm charts to install during cluster setup",
+      "items": {
+        "$ref": "#/definitions/ChartConfig"
+      },
+      "default": []
+    },
+    "compositions": {
+      "$ref": "#/definitions/CompositionsConfig"
+    }
+  },
+  "required": ["cluster", "crossplane"],
+  "additionalProperties": false,
+  "definitions": {
+    "ClusterConfig": {
+      "type": "object",
+      "description": "Kind cluster configuration",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the Kind cluster",
+          "minLength": 1,
+          "default": "kindplane-dev"
+        },
+        "kubernetesVersion": {
+          "type": "string",
+          "description": "Kubernetes version to use (optional, uses Kind default if not specified)",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "examples": ["1.29.0", "1.28.0", "1.27.0"]
+        },
+        "nodes": {
+          "$ref": "#/definitions/NodesConfig"
+        },
+        "portMappings": {
+          "type": "array",
+          "description": "Port mappings from container to host",
+          "items": {
+            "$ref": "#/definitions/PortMapping"
+          }
+        },
+        "extraMounts": {
+          "type": "array",
+          "description": "Mount host paths into Kind nodes",
+          "items": {
+            "$ref": "#/definitions/ExtraMount"
+          }
+        },
+        "ingress": {
+          "$ref": "#/definitions/IngressConfig"
+        },
+        "rawConfigPath": {
+          "type": "string",
+          "description": "Optional path to a raw Kind config file. Settings from kindplane.yaml will be merged on top (kindplane wins)"
+        }
+      },
+      "required": ["name"],
+      "additionalProperties": false
+    },
+    "NodesConfig": {
+      "type": "object",
+      "description": "Node configuration for the Kind cluster",
+      "properties": {
+        "controlPlane": {
+          "type": "integer",
+          "description": "Number of control plane nodes",
+          "minimum": 1,
+          "default": 1
+        },
+        "workers": {
+          "type": "integer",
+          "description": "Number of worker nodes",
+          "minimum": 0,
+          "default": 1
+        }
+      },
+      "required": ["controlPlane"],
+      "additionalProperties": false
+    },
+    "PortMapping": {
+      "type": "object",
+      "description": "Port mapping from container to host",
+      "properties": {
+        "containerPort": {
+          "type": "integer",
+          "description": "Port inside the container",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "hostPort": {
+          "type": "integer",
+          "description": "Port on the host machine",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "protocol": {
+          "type": "string",
+          "description": "Protocol for the port mapping",
+          "enum": ["TCP", "UDP", "SCTP"],
+          "default": "TCP"
+        }
+      },
+      "required": ["containerPort", "hostPort"],
+      "additionalProperties": false
+    },
+    "ExtraMount": {
+      "type": "object",
+      "description": "Volume mount from host to container",
+      "properties": {
+        "hostPath": {
+          "type": "string",
+          "description": "Path on the host machine",
+          "minLength": 1
+        },
+        "containerPath": {
+          "type": "string",
+          "description": "Path inside the container",
+          "minLength": 1
+        },
+        "readOnly": {
+          "type": "boolean",
+          "description": "Whether the mount should be read-only",
+          "default": false
+        }
+      },
+      "required": ["hostPath", "containerPath"],
+      "additionalProperties": false
+    },
+    "IngressConfig": {
+      "type": "object",
+      "description": "Ingress controller readiness configuration. When enabled, adds required labels and port mappings for ingress controllers",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable ingress controller support",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "CrossplaneConfig": {
+      "type": "object",
+      "description": "Crossplane installation settings",
+      "properties": {
+        "version": {
+          "type": "string",
+          "description": "Crossplane version to install",
+          "minLength": 1,
+          "examples": ["1.15.0", "1.14.0"]
+        },
+        "providers": {
+          "type": "array",
+          "description": "Crossplane providers to install",
+          "items": {
+            "$ref": "#/definitions/ProviderConfig"
+          }
+        }
+      },
+      "required": ["version"],
+      "additionalProperties": false
+    },
+    "ProviderConfig": {
+      "type": "object",
+      "description": "Crossplane provider configuration",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the provider (used for identification)",
+          "minLength": 1,
+          "examples": ["provider-aws", "provider-azure", "provider-kubernetes"]
+        },
+        "package": {
+          "type": "string",
+          "description": "Full OCI package path with version tag",
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._/-]*:[a-zA-Z0-9][a-zA-Z0-9._-]*$",
+          "examples": [
+            "xpkg.upbound.io/upbound/provider-aws:v1.1.0",
+            "xpkg.upbound.io/upbound/provider-azure:v1.0.0",
+            "xpkg.upbound.io/crossplane-contrib/provider-kubernetes:v0.12.0"
+          ]
+        }
+      },
+      "required": ["name", "package"],
+      "additionalProperties": false
+    },
+    "CredentialsConfig": {
+      "type": "object",
+      "description": "Cloud provider credentials configuration",
+      "properties": {
+        "aws": {
+          "$ref": "#/definitions/AWSCredentials"
+        },
+        "azure": {
+          "$ref": "#/definitions/AzureCredentials"
+        },
+        "kubernetes": {
+          "$ref": "#/definitions/KubernetesCredentials"
+        }
+      },
+      "additionalProperties": false
+    },
+    "AWSCredentials": {
+      "type": "object",
+      "description": "AWS credential source configuration",
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "Source of AWS credentials: env (environment variables), file (credentials file), profile (AWS CLI profile)",
+          "enum": ["env", "file", "profile"],
+          "default": "env"
+        },
+        "profile": {
+          "type": "string",
+          "description": "AWS CLI profile name (used when source is 'profile')",
+          "default": "default"
+        }
+      },
+      "additionalProperties": false
+    },
+    "AzureCredentials": {
+      "type": "object",
+      "description": "Azure credential source configuration",
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "Source of Azure credentials: env (environment variables), file (credentials file)",
+          "enum": ["env", "file"],
+          "default": "env"
+        }
+      },
+      "additionalProperties": false
+    },
+    "KubernetesCredentials": {
+      "type": "object",
+      "description": "Kubernetes provider credential source configuration",
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "Source of Kubernetes credentials: incluster (use service account), kubeconfig (use kubeconfig file)",
+          "enum": ["incluster", "kubeconfig"],
+          "default": "incluster"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ESOConfig": {
+      "type": "object",
+      "description": "External Secrets Operator configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable External Secrets Operator installation",
+          "default": true
+        },
+        "version": {
+          "type": "string",
+          "description": "ESO version to install (required when enabled is true)",
+          "examples": ["0.9.11", "0.9.10"]
+        }
+      },
+      "if": {
+        "properties": {
+          "enabled": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "required": ["version"]
+      },
+      "additionalProperties": false
+    },
+    "ChartConfig": {
+      "type": "object",
+      "description": "Helm chart installation configuration",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Helm release name",
+          "minLength": 1
+        },
+        "repo": {
+          "type": "string",
+          "description": "Helm repository URL",
+          "format": "uri",
+          "minLength": 1
+        },
+        "chart": {
+          "type": "string",
+          "description": "Chart name in the repository",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "description": "Chart version (optional, uses latest if omitted)"
+        },
+        "namespace": {
+          "type": "string",
+          "description": "Target namespace for the chart",
+          "minLength": 1
+        },
+        "createNamespace": {
+          "type": "boolean",
+          "description": "Create namespace if it does not exist",
+          "default": true
+        },
+        "phase": {
+          "type": "string",
+          "description": "Installation phase determining when the chart is installed",
+          "enum": ["pre-crossplane", "post-crossplane", "post-providers", "post-eso"],
+          "default": "post-eso"
+        },
+        "wait": {
+          "type": "boolean",
+          "description": "Wait for resources to be ready before continuing",
+          "default": true
+        },
+        "timeout": {
+          "type": "string",
+          "description": "Installation timeout (Go duration format)",
+          "pattern": "^[0-9]+(s|m|h)$",
+          "default": "5m",
+          "examples": ["5m", "10m", "300s"]
+        },
+        "values": {
+          "type": "object",
+          "description": "Inline Helm values",
+          "additionalProperties": true
+        },
+        "valuesFiles": {
+          "type": "array",
+          "description": "Paths to external values files",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["name", "repo", "chart", "namespace"],
+      "additionalProperties": false
+    },
+    "CompositionsConfig": {
+      "type": "object",
+      "description": "Crossplane compositions and XRDs configuration",
+      "properties": {
+        "sources": {
+          "type": "array",
+          "description": "Sources to load compositions from",
+          "items": {
+            "$ref": "#/definitions/CompositionSource"
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "CompositionSource": {
+      "type": "object",
+      "description": "Source for loading Crossplane compositions",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Source type: local (filesystem path) or git (git repository)",
+          "enum": ["local", "git"]
+        },
+        "path": {
+          "type": "string",
+          "description": "Local path or path within git repo to compositions"
+        },
+        "repo": {
+          "type": "string",
+          "description": "Git repository URL (required for git type)",
+          "format": "uri"
+        },
+        "branch": {
+          "type": "string",
+          "description": "Git branch to clone (required for git type)",
+          "default": "main"
+        }
+      },
+      "required": ["type", "path"],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "git"
+              }
+            }
+          },
+          "then": {
+            "required": ["type", "path", "repo", "branch"]
+          }
+        }
+      ],
+      "additionalProperties": false
+    }
+  }
+}

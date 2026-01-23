@@ -44,6 +44,7 @@ func init() {
 
 	// Add subcommands
 	RootCmd.AddCommand(initCmd)
+	RootCmd.AddCommand(validateCmd)
 	RootCmd.AddCommand(upCmd)
 	RootCmd.AddCommand(downCmd)
 	RootCmd.AddCommand(statusCmd)
