@@ -3,6 +3,7 @@
 <p align="center">
   <a href="https://github.com/kanzifucius/kindplane/actions/workflows/ci.yaml"><img src="https://github.com/kanzifucius/kindplane/actions/workflows/ci.yaml/badge.svg" alt="Build"></a>
   <a href="https://github.com/kanzifucius/kindplane/releases/latest"><img src="https://img.shields.io/github/v/release/kanzifucius/kindplane?style=flat" alt="Release"></a>
+  <a href="https://kanzifucius.github.io/kindplane/"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-blue?style=flat&logo=github" alt="Documentation"></a>
   <img src="https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat&logo=go" alt="Go Version">
   <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License">
   <img src="https://img.shields.io/badge/Crossplane-1.15+-7C3AED?style=flat" alt="Crossplane">
