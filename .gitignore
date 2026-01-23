@@ -38,3 +38,6 @@ tmp/
 # Debug files
 debug
 __debug_bin
+
+# MkDocs
+site/

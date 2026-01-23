@@ -1,0 +1,137 @@
+# yaml-language-server: $schema=https://squidfunk.github.io/mkdocs-material/schema.json
+
+site_name: kindplane
+site_description: Bootstrap Kind clusters with Crossplane for local development
+site_url: https://kanzifucius.github.io/kindplane
+site_author: Kanzi
+
+repo_name: kanzifucius/kindplane
+repo_url: https://github.com/kanzifucius/kindplane
+edit_uri: edit/main/docs/
+
+copyright: Copyright &copy; 2024 Kanzi
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.path
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.tabs.link
+    - content.code.copy
+    - content.code.annotate
+    - content.action.edit
+    - toc.follow
+  palette:
+    - scheme: default
+      primary: deep purple
+      accent: purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: deep purple
+      accent: purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  font:
+    text: Inter
+    code: JetBrains Mono
+  icon:
+    logo: material/kubernetes
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+  - minify:
+      minify_html: true
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+extra:
+  # Version selector
+  version:
+    provider: mike
+    default: latest
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/kanzifucius/kindplane
+  generator: false
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - Quick Start: getting-started/quickstart.md
+      - Prerequisites: getting-started/prerequisites.md
+  - Configuration:
+      - Overview: configuration/overview.md
+      - Cluster: configuration/cluster.md
+      - Crossplane: configuration/crossplane.md
+      - Providers: configuration/providers.md
+      - External Secrets: configuration/eso.md
+      - Helm Charts: configuration/charts.md
+      - Compositions: configuration/compositions.md
+      - Credentials: configuration/credentials.md
+  - Commands:
+      - Overview: commands/overview.md
+      - init: commands/init.md
+      - validate: commands/validate.md
+      - up: commands/up.md
+      - down: commands/down.md
+      - status: commands/status.md
+      - dump: commands/dump.md
+      - provider: commands/provider.md
+      - chart: commands/chart.md
+      - credentials: commands/credentials.md
+  - Guides:
+      - Working with AWS: guides/aws.md
+      - Working with Azure: guides/azure.md
+      - GitOps Export: guides/gitops.md
+      - Troubleshooting: guides/troubleshooting.md
+  - Development:
+      - Contributing: development/contributing.md
+      - Building: development/building.md
