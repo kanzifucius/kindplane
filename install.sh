@@ -38,34 +38,34 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 BOLD='\033[1m'
 
-# Print functions
+# Print functions (all output to stderr to avoid capturing in command substitution)
 print_banner() {
-    echo -e "${PURPLE}"
-    echo '   _    _           _       _                  '
-    echo '  | | _(_)_ __   __| |_ __ | | __ _ _ __   ___ '
-    echo '  | |/ / | '\''_ \ / _'\'' | '\''_ \| |/ _'\'' | '\''_ \ / _ \'
-    echo '  |   <| | | | | (_| | |_) | | (_| | | | |  __/'
-    echo '  |_|\_\_|_| |_|\__,_| .__/|_|\__,_|_| |_|\___|'
-    echo '                     |_|                       '
-    echo -e "${NC}"
-    echo -e "${CYAN}Bootstrap Kind clusters with Crossplane${NC}"
-    echo ""
+    echo -e "${PURPLE}" >&2
+    echo '   _    _           _       _                  ' >&2
+    echo '  | | _(_)_ __   __| |_ __ | | __ _ _ __   ___ ' >&2
+    echo '  | |/ / | '\''_ \ / _'\'' | '\''_ \| |/ _'\'' | '\''_ \ / _ \' >&2
+    echo '  |   <| | | | | (_| | |_) | | (_| | | | |  __/' >&2
+    echo '  |_|\_\_|_| |_|\__,_| .__/|_|\__,_|_| |_|\___|' >&2
+    echo '                     |_|                       ' >&2
+    echo -e "${NC}" >&2
+    echo -e "${CYAN}Bootstrap Kind clusters with Crossplane${NC}" >&2
+    echo "" >&2
 }
 
 info() {
-    echo -e "${BLUE}${BOLD}INFO${NC} $1"
+    echo -e "${BLUE}${BOLD}INFO${NC} $1" >&2
 }
 
 success() {
-    echo -e "${GREEN}${BOLD}✓${NC} $1"
+    echo -e "${GREEN}${BOLD}✓${NC} $1" >&2
 }
 
 warn() {
-    echo -e "${YELLOW}${BOLD}!${NC} $1"
+    echo -e "${YELLOW}${BOLD}!${NC} $1" >&2
 }
 
 error() {
-    echo -e "${RED}${BOLD}✗${NC} $1"
+    echo -e "${RED}${BOLD}✗${NC} $1" >&2
     exit 1
 }
 
@@ -158,7 +158,8 @@ download_binary() {
         error "Could not find binary after extraction"
     fi
 
-    echo "$binary_file"
+    # Return the full path (cd runs in subshell, so caller won't be in tmp_dir)
+    echo "${tmp_dir}/${binary_file#./}"
 }
 
 # Install the binary
@@ -196,7 +197,7 @@ verify_installation() {
     if command -v "$binary_name" &> /dev/null; then
         success "Installation verified!"
         echo ""
-        "$binary_name" version
+        "$binary_name" -v
         return 0
     fi
 
