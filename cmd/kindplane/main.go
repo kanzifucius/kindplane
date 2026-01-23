@@ -16,6 +16,9 @@ var (
 )
 
 func main() {
+	// Pass version to cmd package for version update checking
+	cmd.Version = Version
+
 	if err := fang.Execute(
 		context.Background(),
 		cmd.RootCmd,

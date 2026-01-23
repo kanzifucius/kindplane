@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/spf13/cobra"
 
@@ -13,15 +14,22 @@ import (
 	"github.com/kanzi/kindplane/internal/cmd/provider"
 	"github.com/kanzi/kindplane/internal/config"
 	"github.com/kanzi/kindplane/internal/ui"
+	"github.com/kanzi/kindplane/internal/version"
 )
 
 var (
+	// Version is set by main.go from build-time ldflags
+	Version = "dev"
+
 	// Global flags
 	cfgFile string
 	verbose bool
 
 	// Global config
 	cfg *config.Config
+
+	// versionCheckOnce ensures version check only runs once
+	versionCheckOnce sync.Once
 )
 
 // RootCmd represents the base command when called without any subcommands
@@ -34,6 +42,12 @@ cloud providers, and other essential components.
 
 It automates the tedious process of setting up a local Kubernetes
 development environment with Crossplane for infrastructure management.`,
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		// Run version check asynchronously (only once per CLI invocation)
+		versionCheckOnce.Do(func() {
+			go checkForUpdates()
+		})
+	},
 }
 
 func init() {
@@ -114,5 +128,41 @@ func printStep(format string, a ...interface{}) {
 func printVerbose(format string, a ...interface{}) {
 	if verbose {
 		fmt.Println(ui.Muted("[debug] "+format, a...))
+	}
+}
+
+// checkForUpdates checks for a newer version and prints a warning if available
+func checkForUpdates() {
+	// Skip version check for dev builds
+	if Version == "dev" || Version == "none" || Version == "" {
+		return
+	}
+
+	var result *version.CheckResult
+
+	// Try to use cached result first
+	if !version.ShouldCheck() {
+		result = version.GetCachedResult(Version)
+	}
+
+	// If no valid cache, fetch from GitHub
+	if result == nil {
+		var err error
+		result, err = version.CheckForUpdate(Version)
+		if err != nil {
+			// Fail silently - network issues shouldn't affect CLI usage
+			return
+		}
+
+		// Cache the result for next time
+		_ = version.SaveCache(result.LatestVersion, result.ReleaseURL)
+	}
+
+	// Show warning if update is available
+	if result != nil && result.UpdateAvailable {
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, ui.Warning("A new version of kindplane is available: %s → %s", Version, result.LatestVersion))
+		fmt.Fprintln(os.Stderr, ui.Muted("  Update with: curl -fsSL https://raw.githubusercontent.com/kanzifucius/kindplane/main/install.sh | bash"))
+		fmt.Fprintln(os.Stderr, "")
 	}
 }
