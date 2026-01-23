@@ -1,16 +1,20 @@
 # kindplane
 
 <p align="center">
+  <a href="https://github.com/kanzifucius/kindplane/actions/workflows/ci.yaml"><img src="https://github.com/kanzifucius/kindplane/actions/workflows/ci.yaml/badge.svg" alt="Build"></a>
+  <a href="https://github.com/kanzifucius/kindplane/releases/latest"><img src="https://img.shields.io/github/v/release/kanzifucius/kindplane?style=flat" alt="Release"></a>
   <img src="https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat&logo=go" alt="Go Version">
   <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License">
   <img src="https://img.shields.io/badge/Crossplane-1.15+-7C3AED?style=flat" alt="Crossplane">
 </p>
 
-**kindplane** is a CLI tool that helps developers quickly spin up [Kind](https://kind.sigs.k8s.io/) (Kubernetes in Docker) clusters pre-configured with [Crossplane](https://crossplane.io/), cloud providers, and other essential components.
+**kindplane** is a CLI tool for **local development** that helps developers quickly spin up [Kind](https://kind.sigs.k8s.io/) (Kubernetes in Docker) clusters pre-configured with [Crossplane](https://crossplane.io/), cloud providers, and other essential components.
 
-It automates the tedious process of setting up a local Kubernetes development environment with Crossplane for infrastructure management.
+It automates the tedious process of setting up a local Kubernetes development environment with Crossplane for infrastructure management. This tool is designed for local development and testing workflows only—it is not intended for production use.
 
 ## Features
+
+> **Note:** kindplane is designed for local development and testing only. Do not use it to manage production infrastructure.
 
 - 🚀 **One-command bootstrap** - Create fully configured Kind clusters with a single command
 - ⚙️ **Crossplane integration** - Automatic installation and configuration of Crossplane
@@ -58,12 +62,16 @@ sudo mv bin/kindplane /usr/local/bin/
 
 ### Prerequisites
 
-- [Go 1.23+](https://golang.org/dl/)
-- [Docker](https://docs.docker.com/get-docker/)
-- [kubectl](https://kubernetes.io/docs/tasks/tools/)
-- [Kind](https://kind.sigs.k8s.io/docs/user/quick-start/#installation) (automatically managed)
+To run kindplane on your local machine, you need:
+
+- [Docker](https://docs.docker.com/get-docker/) - Required to run Kind clusters
+- [kubectl](https://kubernetes.io/docs/tasks/tools/) - For interacting with the cluster
+
+**Note:** Helm and Kind are embedded as Go libraries—no separate installation required.
 
 ## Quick Start
+
+Get a local Crossplane development environment running in minutes:
 
 ```bash
 # Initialize configuration
