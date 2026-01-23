@@ -1,3 +1,5 @@
+version: "2"
+
 run:
   timeout: 5m
   modules-download-mode: readonly
@@ -5,25 +7,26 @@ run:
 linters:
   enable:
     - errcheck
-    - gosimple
     - govet
     - ineffassign
     - staticcheck
     - unused
-    - gofmt
-    - goimports
     - misspell
     - unconvert
     - unparam
     - nakedret
     - prealloc
-    - exportloopref
     - gocritic
     - revive
     - gosec
     - bodyclose
     - noctx
     - errorlint
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
 
 linters-settings:
   errcheck:
@@ -33,10 +36,6 @@ linters-settings:
     enable-all: true
     disable:
       - fieldalignment
-  gofmt:
-    simplify: true
-  goimports:
-    local-prefixes: github.com/kanzi/kindplane
   misspell:
     locale: US
   nakedret:
@@ -76,17 +75,22 @@ linters-settings:
       - name: errorf
   gosec:
     excludes:
-      - G104 # Audit errors not checked
-      - G304 # File path provided as taint input
+      - G104
+      - G304
+
+formatters-settings:
+  gofmt:
+    simplify: true
+  goimports:
+    local-prefixes:
+      - github.com/kanzi/kindplane
 
 issues:
   exclude-rules:
-    # Exclude some linters from running on tests files.
     - path: _test\.go
       linters:
         - gosec
         - errcheck
-    # Exclude shadow checking on err
     - linters:
         - govet
       text: 'shadow: declaration of "err"'
