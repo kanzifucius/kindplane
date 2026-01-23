@@ -19,10 +19,8 @@ var initCmd = &cobra.Command{
 	Long: `Initialize a new kindplane.yaml configuration file with sensible defaults.
 
 This command creates a configuration file that defines your Kind cluster setup,
-Crossplane installation, providers, and other components.
-
-Examples:
-  # Create default config file
+Crossplane installation, providers, and other components.`,
+	Example: `  # Create default config file
   kindplane init
 
   # Overwrite existing config file

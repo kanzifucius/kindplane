@@ -25,10 +25,8 @@ var addCmd = &cobra.Command{
 	Long: `Add a new Crossplane provider to the running cluster.
 
 The provider name is the Kubernetes resource name for the provider.
-The package is the full OCI package path including version tag.
-
-Examples:
-  # Add AWS provider from Upbound
+The package is the full OCI package path including version tag.`,
+	Example: `  # Add AWS provider from Upbound
   kindplane provider add provider-aws --package xpkg.upbound.io/upbound/provider-aws:v1.1.0
 
   # Add Kubernetes provider from crossplane-contrib

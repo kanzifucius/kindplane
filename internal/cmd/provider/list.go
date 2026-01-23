@@ -22,10 +22,8 @@ var listCmd = &cobra.Command{
 	Short: "List installed Crossplane providers",
 	Long: `List all Crossplane providers installed in the cluster.
 
-Shows provider name, version, and health status.
-
-Examples:
-  # List all providers
+Shows provider name, version, and health status.`,
+	Example: `  # List all providers
   kindplane provider list`,
 	RunE: runList,
 }

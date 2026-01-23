@@ -31,10 +31,8 @@ resources in the cluster.
 Supported providers:
   - aws        AWS credentials
   - azure      Azure credentials
-  - kubernetes Kubernetes provider credentials
-
-Examples:
-  # Configure AWS credentials interactively
+  - kubernetes Kubernetes provider credentials`,
+	Example: `  # Configure AWS credentials interactively
   kindplane credentials configure --provider aws
 
   # Configure all providers

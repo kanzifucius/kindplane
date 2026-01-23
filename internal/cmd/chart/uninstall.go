@@ -22,10 +22,8 @@ var (
 var uninstallCmd = &cobra.Command{
 	Use:   "uninstall <release-name>",
 	Short: "Uninstall a Helm release",
-	Long: `Uninstall a Helm release from the cluster.
-
-Examples:
-  # Uninstall a release
+	Long:  `Uninstall a Helm release from the cluster.`,
+	Example: `  # Uninstall a release
   kindplane chart uninstall nginx-ingress --namespace ingress-nginx
 
   # Force uninstall without confirmation

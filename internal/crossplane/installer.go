@@ -139,7 +139,33 @@ func (i *Installer) isReady(ctx context.Context) (bool, error) {
 // name is the Kubernetes resource name for the provider
 // pkg is the full OCI package path (e.g., xpkg.upbound.io/upbound/provider-aws:v1.1.0)
 func (i *Installer) InstallProvider(ctx context.Context, name, pkg string) error {
-	// Create provider manifest
+	// Get dynamic client
+	dynamicClient, err := i.getDynamicClient()
+	if err != nil {
+		return fmt.Errorf("failed to get dynamic client: %w", err)
+	}
+
+	gvr := schema.GroupVersionResource{
+		Group:    "pkg.crossplane.io",
+		Version:  "v1",
+		Resource: "providers",
+	}
+
+	// Check if provider already exists
+	existing, err := dynamicClient.Resource(gvr).Get(ctx, name, metav1.GetOptions{})
+	if err == nil {
+		// Provider exists - update it with the current resourceVersion
+		existing.Object["spec"] = map[string]interface{}{
+			"package": pkg,
+		}
+		_, err = dynamicClient.Resource(gvr).Update(ctx, existing, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to update provider: %w", err)
+		}
+		return nil
+	}
+
+	// Provider doesn't exist - create it
 	provider := &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "pkg.crossplane.io/v1",
@@ -153,26 +179,9 @@ func (i *Installer) InstallProvider(ctx context.Context, name, pkg string) error
 		},
 	}
 
-	// Get dynamic client
-	dynamicClient, err := i.getDynamicClient()
-	if err != nil {
-		return fmt.Errorf("failed to get dynamic client: %w", err)
-	}
-
-	// Create or update provider
-	gvr := schema.GroupVersionResource{
-		Group:    "pkg.crossplane.io",
-		Version:  "v1",
-		Resource: "providers",
-	}
-
 	_, err = dynamicClient.Resource(gvr).Create(ctx, provider, metav1.CreateOptions{})
 	if err != nil {
-		// Try update if create fails
-		_, err = dynamicClient.Resource(gvr).Update(ctx, provider, metav1.UpdateOptions{})
-		if err != nil {
-			return fmt.Errorf("failed to create/update provider: %w", err)
-		}
+		return fmt.Errorf("failed to create provider: %w", err)
 	}
 
 	return nil

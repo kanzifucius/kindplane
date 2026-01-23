@@ -47,10 +47,8 @@ The exported resources are cleaned for GitOps:
   - Cluster-specific metadata removed (uid, resourceVersion, managedFields)
   - Unnecessary annotations stripped (kubectl.kubernetes.io/last-applied-configuration)
   - Secret data redacted with placeholders
-  - Status fields removed
-
-Examples:
-  # Dump all resources to ./dump directory
+  - Status fields removed`,
+	Example: `  # Dump all resources to ./dump directory
   kindplane dump
 
   # Dump to a specific directory

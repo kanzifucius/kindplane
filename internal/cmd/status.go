@@ -29,10 +29,8 @@ Shows:
   - Cluster status (exists/running)
   - Crossplane installation status
   - Provider health
-  - External Secrets Operator status
-
-Examples:
-  # Show basic status
+  - External Secrets Operator status`,
+	Example: `  # Show basic status
   kindplane status
 
   # Show detailed status with pod information

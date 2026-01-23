@@ -20,10 +20,8 @@ var downCmd = &cobra.Command{
 	Long: `Delete the Kind cluster and all its resources.
 
 This command will permanently delete the cluster. All data and
-resources within the cluster will be lost.
-
-Examples:
-  # Delete cluster (uses config file)
+resources within the cluster will be lost.`,
+	Example: `  # Delete cluster (uses config file)
   kindplane down
 
   # Force delete without confirmation

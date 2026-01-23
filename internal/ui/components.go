@@ -166,100 +166,6 @@ func DiagnosticBox(content string) string {
 	return header + "\n" + box
 }
 
-// Table represents a simple table
-type Table struct {
-	Headers []string
-	Rows    [][]string
-	Width   int
-}
-
-// NewTable creates a new table
-func NewTable(headers ...string) *Table {
-	return &Table{
-		Headers: headers,
-		Rows:    [][]string{},
-	}
-}
-
-// AddRow adds a row to the table
-func (t *Table) AddRow(cells ...string) *Table {
-	t.Rows = append(t.Rows, cells)
-	return t
-}
-
-// SetWidth sets the table width
-func (t *Table) SetWidth(width int) *Table {
-	t.Width = width
-	return t
-}
-
-// Render renders the table
-func (t *Table) Render() string {
-	if len(t.Headers) == 0 && len(t.Rows) == 0 {
-		return ""
-	}
-
-	// Calculate column widths
-	colWidths := make([]int, len(t.Headers))
-	for i, h := range t.Headers {
-		colWidths[i] = len(h)
-	}
-	for _, row := range t.Rows {
-		for i, cell := range row {
-			if i < len(colWidths) && len(cell) > colWidths[i] {
-				colWidths[i] = len(cell)
-			}
-		}
-	}
-
-	// Add padding
-	for i := range colWidths {
-		colWidths[i] += 2
-	}
-
-	var sb strings.Builder
-
-	// Render header
-	if len(t.Headers) > 0 {
-		headerStyle := lipgloss.NewStyle().
-			Bold(true).
-			Foreground(ColorSecondary)
-
-		var headerCells []string
-		for i, h := range t.Headers {
-			cellStyle := lipgloss.NewStyle().Width(colWidths[i])
-			headerCells = append(headerCells, cellStyle.Render(h))
-		}
-		sb.WriteString(headerStyle.Render(strings.Join(headerCells, " ")))
-		sb.WriteString("\n")
-
-		// Separator
-		var sepParts []string
-		for _, w := range colWidths {
-			sepParts = append(sepParts, strings.Repeat("─", w))
-		}
-		sb.WriteString(StyleMuted.Render(strings.Join(sepParts, " ")))
-		sb.WriteString("\n")
-	}
-
-	// Render rows
-	for _, row := range t.Rows {
-		var cells []string
-		for i, cell := range row {
-			width := 10
-			if i < len(colWidths) {
-				width = colWidths[i]
-			}
-			cellStyle := lipgloss.NewStyle().Width(width)
-			cells = append(cells, cellStyle.Render(cell))
-		}
-		sb.WriteString(strings.Join(cells, " "))
-		sb.WriteString("\n")
-	}
-
-	return sb.String()
-}
-
 // KeyValue renders a key-value pair
 func KeyValue(key, value string) string {
 	keyStyle := lipgloss.NewStyle().
@@ -342,29 +248,6 @@ func renderTree(items []TreeItem, prefix string, isRoot bool) string {
 
 	return sb.String()
 }
-
-// ProgressBar renders a simple progress bar
-func ProgressBar(current, total int, width int) string {
-	if total == 0 {
-		return ""
-	}
-
-	percentage := float64(current) / float64(total)
-	filled := int(percentage * float64(width))
-	if filled > width {
-		filled = width
-	}
-
-	bar := strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
-
-	barStyle := lipgloss.NewStyle().Foreground(ColorPrimary)
-	percentStyle := lipgloss.NewStyle().Foreground(ColorMuted).Width(6).Align(lipgloss.Right)
-
-	return barStyle.Render(bar) + " " + percentStyle.Render(fmt.Sprintf("%d%%", int(percentage*100)))
-}
-
-// Spinner characters for animation
-var SpinnerFrames = []string{"◐", "◓", "◑", "◒"}
 
 // Divider renders a horizontal divider
 func Divider() string {

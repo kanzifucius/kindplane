@@ -23,10 +23,8 @@ var listCmd = &cobra.Command{
 	Short: "List installed Helm releases",
 	Long: `List all Helm releases installed in the cluster.
 
-By default, lists releases in all namespaces. Use --namespace to filter.
-
-Examples:
-  # List all releases
+By default, lists releases in all namespaces. Use --namespace to filter.`,
+	Example: `  # List all releases
   kindplane chart list
 
   # List releases in a specific namespace

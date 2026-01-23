@@ -30,10 +30,8 @@ var installCmd = &cobra.Command{
 	Short: "Install a Helm chart",
 	Long: `Install a Helm chart to the cluster.
 
-The release name is used as the Kubernetes resource name.
-
-Examples:
-  # Install nginx ingress controller
+The release name is used as the Kubernetes resource name.`,
+	Example: `  # Install nginx ingress controller
   kindplane chart install nginx-ingress \
     --repo https://kubernetes.github.io/ingress-nginx \
     --chart ingress-nginx \

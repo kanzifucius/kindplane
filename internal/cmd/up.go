@@ -16,6 +16,7 @@ import (
 	"github.com/kanzi/kindplane/internal/eso"
 	"github.com/kanzi/kindplane/internal/helm"
 	"github.com/kanzi/kindplane/internal/kind"
+	"github.com/kanzi/kindplane/internal/ui"
 )
 
 var (
@@ -46,10 +47,8 @@ The bootstrap process:
   6. Install charts with phase: post-providers
   7. Install External Secrets Operator (if enabled)
   8. Install charts with phase: post-eso (default)
-  9. Apply custom compositions (if configured)
-
-Examples:
-  # Create cluster with full bootstrap
+  9. Apply custom compositions (if configured)`,
+	Example: `  # Create cluster with full bootstrap
   kindplane up
 
   # Skip provider installation
@@ -182,15 +181,14 @@ func runUp(cmd *cobra.Command, args []string) error {
 		}
 		printSuccess("Crossplane installed")
 
-		// Wait for Crossplane to be ready
-		printInfo("Waiting for Crossplane to be ready...")
-		if err := installer.WaitForReady(ctx); err != nil {
-			printError("Crossplane failed to become ready: %v", err)
+		// Wait for Crossplane to be ready with animated spinner
+		if err := ui.RunSpinner("Waiting for Crossplane to be ready", func() error {
+			return installer.WaitForReady(ctx)
+		}); err != nil {
 			showCrossplaneDiagnostics(bc)
 			rollback()
 			return err
 		}
-		printSuccess("Crossplane is ready")
 	}
 
 	// Step 4: Install post-crossplane charts
@@ -201,29 +199,52 @@ func runUp(cmd *cobra.Command, args []string) error {
 	}
 
 	// Step 5: Install providers
-	if !upSkipProviders && !upSkipCrossplane {
-		for _, provider := range cfg.Crossplane.Providers {
-			printInfo("Installing %s (%s)...", provider.Name, provider.Package)
-			installer := crossplane.NewInstaller(kubeClient)
-			if err := installer.InstallProvider(ctx, provider.Name, provider.Package); err != nil {
-				printError("Failed to install provider %s: %v", provider.Name, err)
-				rollback()
-				return err
-			}
-			printSuccess("Provider %s installed", provider.Name)
+	if !upSkipProviders && !upSkipCrossplane && len(cfg.Crossplane.Providers) > 0 {
+		// Build provider names for progress display
+		printInfo("Installing Crossplane providers...")
+		providerNames := make([]string, len(cfg.Crossplane.Providers))
+		providerMap := make(map[string]config.ProviderConfig)
+		for i, p := range cfg.Crossplane.Providers {
+			providerNames[i] = p.Name
+			providerMap[p.Name] = p
 		}
 
-		// Wait for providers to be healthy
-		if len(cfg.Crossplane.Providers) > 0 {
-			printInfo("Waiting for providers to be healthy...")
-			installer := crossplane.NewInstaller(kubeClient)
-			if err := installer.WaitForProviders(ctx); err != nil {
-				printError("Providers failed to become healthy: %v", err)
-				showProviderDiagnostics(bc)
-				rollback()
-				return err
+		// Install providers with animated progress bar
+		installer := crossplane.NewInstaller(kubeClient)
+		if err := ui.RunProgress("Installing Crossplane providers", providerNames, func(name string) error {
+			provider := providerMap[name]
+			return installer.InstallProvider(ctx, provider.Name, provider.Package)
+		}); err != nil {
+			rollback()
+			return err
+		}
+
+		// Wait for providers to be healthy with animated table
+		if err := ui.RunProviderTable(ctx, "Waiting for providers to be healthy", func(pollCtx context.Context) ([]ui.ProviderInfo, bool, error) {
+			statuses, err := installer.GetProviderStatus(pollCtx)
+			if err != nil {
+				return nil, false, nil // Keep trying on error
 			}
-			printSuccess("All providers are healthy")
+
+			providers := make([]ui.ProviderInfo, len(statuses))
+			allHealthy := true
+			for i, s := range statuses {
+				providers[i] = ui.ProviderInfo{
+					Name:    s.Name,
+					Package: s.Package,
+					Healthy: s.Healthy,
+					Message: s.Message,
+				}
+				if !s.Healthy {
+					allHealthy = false
+				}
+			}
+
+			return providers, allHealthy && len(providers) > 0, nil
+		}); err != nil {
+			showProviderDiagnostics(bc)
+			rollback()
+			return err
 		}
 	}
 
@@ -246,15 +267,14 @@ func runUp(cmd *cobra.Command, args []string) error {
 		}
 		printSuccess("External Secrets Operator installed")
 
-		// Wait for ESO to be ready
-		printInfo("Waiting for ESO to be ready...")
-		if err := esoInstaller.WaitForReady(ctx); err != nil {
-			printError("ESO failed to become ready: %v", err)
+		// Wait for ESO to be ready with animated spinner
+		if err := ui.RunSpinner("Waiting for ESO to be ready", func() error {
+			return esoInstaller.WaitForReady(ctx)
+		}); err != nil {
 			showESODiagnostics(bc)
 			rollback()
 			return err
 		}
-		printSuccess("ESO is ready")
 	}
 
 	// Step 8: Install post-eso charts (default phase)
@@ -295,16 +315,34 @@ func installChartsForPhase(ctx context.Context, helmInstaller *helm.Installer, p
 		return nil
 	}
 
-	printInfo("Installing %s charts...", phase)
-	for _, chart := range charts {
-		printInfo("  Installing chart %s (%s/%s)...", chart.Name, chart.Repo, chart.Chart)
-		if err := helmInstaller.InstallChartFromConfig(ctx, chart); err != nil {
-			printError("Failed to install chart %s: %v", chart.Name, err)
-			showChartDiagnostics(bc, chart)
-			rollback()
-			return err
+	// Build chart names for progress display
+	chartNames := make([]string, len(charts))
+	chartMap := make(map[string]config.ChartConfig)
+	for i, chart := range charts {
+		chartNames[i] = chart.Name
+		chartMap[chart.Name] = chart
+	}
+
+	// Track failed chart for diagnostics
+	var failedChart config.ChartConfig
+
+	// Install charts with animated progress bar
+	title := fmt.Sprintf("Installing %s charts", phase)
+	err := ui.RunProgress(title, chartNames, func(name string) error {
+		chart := chartMap[name]
+		if installErr := helmInstaller.InstallChartFromConfig(ctx, chart); installErr != nil {
+			failedChart = chart
+			return installErr
 		}
-		printSuccess("  Chart %s installed", chart.Name)
+		return nil
+	})
+
+	if err != nil {
+		if failedChart.Name != "" {
+			showChartDiagnostics(bc, failedChart)
+		}
+		rollback()
+		return err
 	}
 
 	return nil
