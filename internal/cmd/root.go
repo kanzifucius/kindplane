@@ -95,7 +95,7 @@ func loadConfig() error {
 // requireConfig ensures config is loaded, exits if not found
 func requireConfig() {
 	if err := loadConfig(); err != nil {
-		printError(err.Error())
+		printError("failed to load config: %v", err)
 		os.Exit(1)
 	}
 }

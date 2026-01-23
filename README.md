@@ -1,7 +1,7 @@
 # kindplane
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go" alt="Go Version">
+  <img src="https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat&logo=go" alt="Go Version">
   <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License">
   <img src="https://img.shields.io/badge/Crossplane-1.15+-7C3AED?style=flat" alt="Crossplane">
 </p>
@@ -58,7 +58,7 @@ sudo mv bin/kindplane /usr/local/bin/
 
 ### Prerequisites
 
-- [Go 1.21+](https://golang.org/dl/)
+- [Go 1.23+](https://golang.org/dl/)
 - [Docker](https://docs.docker.com/get-docker/)
 - [kubectl](https://kubernetes.io/docs/tasks/tools/)
 - [Kind](https://kind.sigs.k8s.io/docs/user/quick-start/#installation) (automatically managed)
