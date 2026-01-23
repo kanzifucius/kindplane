@@ -79,6 +79,7 @@ jobs:
         if: github.ref == 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/')
         run: |
           mike deploy --push dev
+          mike set-default --push dev
 
       # Manual deployment
       - name: Deploy docs (manual)
