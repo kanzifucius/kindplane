@@ -249,7 +249,7 @@ func debugLog(format string, v ...interface{}) {
 // InstallChartFromConfig installs a Helm chart from a ChartConfig
 func (i *Installer) InstallChartFromConfig(ctx context.Context, chartCfg config.ChartConfig) error {
 	// Generate a unique repo name from the URL
-	repoName := generateRepoName(chartCfg.Repo)
+	repoName := GenerateRepoName(chartCfg.Repo)
 
 	// Add the repo
 	if err := i.AddRepo(ctx, repoName, chartCfg.Repo); err != nil {
@@ -405,8 +405,8 @@ func (i *Installer) UninstallRelease(ctx context.Context, releaseName, namespace
 	return i.Uninstall(ctx, releaseName, namespace)
 }
 
-// generateRepoName creates a unique repo name from a URL
-func generateRepoName(url string) string {
+// GenerateRepoName creates a unique repo name from a URL
+func GenerateRepoName(url string) string {
 	// Create a short hash of the URL for uniqueness
 	hash := sha256.Sum256([]byte(url))
 	shortHash := fmt.Sprintf("%x", hash[:4])

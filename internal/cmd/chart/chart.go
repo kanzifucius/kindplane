@@ -12,12 +12,14 @@ var ChartCmd = &cobra.Command{
 
 Available subcommands:
   install   - Install a Helm chart
+  upgrade   - Upgrade a Helm release
   list      - List installed Helm releases
   uninstall - Uninstall a Helm release`,
 }
 
 func init() {
 	ChartCmd.AddCommand(installCmd)
+	ChartCmd.AddCommand(upgradeCmd)
 	ChartCmd.AddCommand(listCmd)
 	ChartCmd.AddCommand(uninstallCmd)
 }
