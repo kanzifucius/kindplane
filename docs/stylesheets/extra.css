@@ -106,3 +106,20 @@ abbr[title] {
   text-decoration: underline dotted;
   cursor: help;
 }
+
+/* ============================================
+   Outdated version warning
+   ============================================ */
+.md-banner--warning {
+  background-color: #F59E0B;
+  color: #1F2937;
+}
+
+.md-banner--warning a {
+  color: #1F2937;
+  font-weight: 600;
+}
+
+.md-banner--warning a:hover {
+  color: #111827;
+}

@@ -1,5 +1,12 @@
 {% extends "base.html" %}
 
+{% block outdated %}
+  You're viewing documentation for <strong>{{ config.extra.version.default }}</strong>.
+  <a href="{{ '../' ~ config.extra.version.default ~ '/' }}">
+    <strong>Switch to the latest version</strong>
+  </a>
+{% endblock %}
+
 {% block announce %}
   <a href="https://github.com/kanzifucius/kindplane/releases/latest">
     <span class="twemoji">
