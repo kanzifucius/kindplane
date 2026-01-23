@@ -187,6 +187,48 @@ func (i *Installer) InstallProvider(ctx context.Context, name, pkg string) error
 	return nil
 }
 
+// DeleteProvider removes a Crossplane provider by name
+func (i *Installer) DeleteProvider(ctx context.Context, name string) error {
+	dynamicClient, err := i.getDynamicClient()
+	if err != nil {
+		return fmt.Errorf("failed to get dynamic client: %w", err)
+	}
+
+	gvr := schema.GroupVersionResource{
+		Group:    "pkg.crossplane.io",
+		Version:  "v1",
+		Resource: "providers",
+	}
+
+	err = dynamicClient.Resource(gvr).Delete(ctx, name, metav1.DeleteOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to delete provider: %w", err)
+	}
+
+	return nil
+}
+
+// ProviderExists checks if a provider with the given name exists
+func (i *Installer) ProviderExists(ctx context.Context, name string) (bool, error) {
+	dynamicClient, err := i.getDynamicClient()
+	if err != nil {
+		return false, fmt.Errorf("failed to get dynamic client: %w", err)
+	}
+
+	gvr := schema.GroupVersionResource{
+		Group:    "pkg.crossplane.io",
+		Version:  "v1",
+		Resource: "providers",
+	}
+
+	_, err = dynamicClient.Resource(gvr).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return false, nil
+	}
+
+	return true, nil
+}
+
 // WaitForProviders waits for all providers to be healthy
 func (i *Installer) WaitForProviders(ctx context.Context) error {
 	ticker := time.NewTicker(5 * time.Second)

@@ -415,7 +415,20 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Acknowledgments
+## Acknowledgements
+
+### Built with AI
+
+This project was conceived and developed with the assistance of AI coding tools. It serves as both a practical developer tool and an exploration of AI-assisted software development workflows.
+
+**AI Tools Used:**
+
+- [Cursor](https://cursor.sh/) - AI-first code editor
+- [opencode](https://github.com/opencode-ai/opencode) - Terminal-based AI coding assistant
+
+The codebase includes `.cursor/skills/` containing reusable patterns that help AI assistants understand the project's conventions and contribute effectively.
+
+### Technologies
 
 - [Crossplane](https://crossplane.io/) - Cloud-native control planes
 - [Kind](https://kind.sigs.k8s.io/) - Kubernetes in Docker

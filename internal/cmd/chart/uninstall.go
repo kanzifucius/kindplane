@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/AlecAivazis/survey/v2"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
@@ -86,10 +87,18 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 
 	// Confirm unless --force
 	if !uninstallForce {
-		color.Yellow("! This will uninstall release '%s' from namespace '%s'", releaseName, uninstallNamespace)
-		fmt.Println("  Use --force to skip this confirmation")
-		color.Red("✗ Uninstall cancelled. Use --force to confirm.")
-		return nil
+		confirm := false
+		prompt := &survey.Confirm{
+			Message: fmt.Sprintf("Uninstall release '%s' from namespace '%s'?", releaseName, uninstallNamespace),
+		}
+		if err := survey.AskOne(prompt, &confirm); err != nil {
+			color.Red("✗ Prompt failed: %v", err)
+			return err
+		}
+		if !confirm {
+			color.Yellow("! Uninstall cancelled")
+			return nil
+		}
 	}
 
 	// Uninstall

@@ -11,9 +11,11 @@ var CredentialsCmd = &cobra.Command{
 	Long: `Manage cloud provider credentials for Crossplane.
 
 Available subcommands:
-  configure - Configure credentials for cloud providers`,
+  configure - Configure credentials for cloud providers
+  list      - List configured credentials`,
 }
 
 func init() {
 	CredentialsCmd.AddCommand(configureCmd)
+	CredentialsCmd.AddCommand(listCmd)
 }

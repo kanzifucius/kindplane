@@ -7,6 +7,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/kanzi/kindplane/internal/cmd/chart"
+	"github.com/kanzi/kindplane/internal/cmd/cluster"
+	"github.com/kanzi/kindplane/internal/cmd/configcmd"
 	"github.com/kanzi/kindplane/internal/cmd/credentials"
 	"github.com/kanzi/kindplane/internal/cmd/provider"
 	"github.com/kanzi/kindplane/internal/config"
@@ -49,6 +51,12 @@ func init() {
 	RootCmd.AddCommand(downCmd)
 	RootCmd.AddCommand(statusCmd)
 	RootCmd.AddCommand(dumpCmd)
+	RootCmd.AddCommand(diagnosticsCmd)
+	RootCmd.AddCommand(logsCmd)
+	RootCmd.AddCommand(applyCmd)
+	RootCmd.AddCommand(doctorCmd)
+	RootCmd.AddCommand(cluster.ClusterCmd)
+	RootCmd.AddCommand(configcmd.ConfigCmd)
 	RootCmd.AddCommand(provider.ProviderCmd)
 	RootCmd.AddCommand(chart.ChartCmd)
 	RootCmd.AddCommand(credentials.CredentialsCmd)

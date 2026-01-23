@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
 
 	"github.com/kanzi/kindplane/internal/kind"
@@ -57,12 +59,18 @@ func runDown(cmd *cobra.Command, args []string) error {
 
 	// Confirm deletion unless --force
 	if !downForce {
-		printWarn("This will permanently delete cluster '%s'", clusterName)
-		printStep("Use --force to skip this confirmation")
-		// In a real implementation, you'd prompt for confirmation here
-		// For now, we'll just require --force
-		printError("Deletion cancelled. Use --force to confirm.")
-		return nil
+		confirm := false
+		prompt := &survey.Confirm{
+			Message: fmt.Sprintf("Delete cluster '%s'? This cannot be undone.", clusterName),
+		}
+		if err := survey.AskOne(prompt, &confirm); err != nil {
+			printError("Prompt failed: %v", err)
+			return err
+		}
+		if !confirm {
+			printWarn("Deletion cancelled")
+			return nil
+		}
 	}
 
 	printInfo("Deleting cluster '%s'...", clusterName)
