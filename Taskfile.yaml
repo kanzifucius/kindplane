@@ -157,3 +157,44 @@ tasks:
       - go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
       - go install golang.org/x/tools/cmd/goimports@latest
       - go install github.com/goreleaser/goreleaser@latest
+
+  # Documentation tasks
+  docs:serve:
+    desc: Serve documentation locally with hot reload (Docker)
+    cmds:
+      - docker run --rm -it -p 8000:8000 -v {{.ROOT_DIR}}:/docs squidfunk/mkdocs-material serve --dev-addr=0.0.0.0:8000
+
+  docs:build:
+    desc: Build documentation site (Docker)
+    cmds:
+      - docker run --rm -v {{.ROOT_DIR}}:/docs squidfunk/mkdocs-material build --strict
+
+  docs:clean:
+    desc: Remove built documentation
+    cmds:
+      - rm -rf site/
+
+  # Versioned documentation tasks (using mike)
+  docs:version:deploy:
+    desc: "Deploy a versioned doc (usage: task docs:version:deploy VERSION=1.0.0)"
+    requires:
+      vars: [VERSION]
+    cmds:
+      - |
+        docker run --rm -v {{.ROOT_DIR}}:/docs -v ~/.gitconfig:/root/.gitconfig:ro \
+          -w /docs squidfunk/mkdocs-material \
+          sh -c "pip install mike && mike deploy {{.VERSION}}"
+
+  docs:version:list:
+    desc: List all deployed documentation versions
+    cmds:
+      - |
+        docker run --rm -v {{.ROOT_DIR}}:/docs -w /docs squidfunk/mkdocs-material \
+          sh -c "pip install mike && mike list"
+
+  docs:version:serve:
+    desc: Serve versioned documentation locally
+    cmds:
+      - |
+        docker run --rm -it -p 8000:8000 -v {{.ROOT_DIR}}:/docs -w /docs squidfunk/mkdocs-material \
+          sh -c "pip install mike && mike serve --dev-addr=0.0.0.0:8000"

@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/kanzi/kindplane/main/kindplane.schema.json",
+  "$id": "https://raw.githubusercontent.com/kanzifucius/kindplane/main/kindplane.schema.json",
   "title": "Kindplane Configuration",
   "description": "Configuration schema for kindplane.yaml - a tool for bootstrapping Kind clusters with Crossplane",
   "type": "object",
