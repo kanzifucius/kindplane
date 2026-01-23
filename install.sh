@@ -23,7 +23,7 @@
 set -euo pipefail
 
 # Configuration
-VERSION="v0.1.2"
+VERSION="${KINDPLANE_VERSION:-latest}"
 INSTALL_DIR="${KINDPLANE_INSTALL_DIR:-/usr/local/bin}"
 GITHUB_REPO="kanzifucius/kindplane"
 BINARY_NAME="kindplane"
