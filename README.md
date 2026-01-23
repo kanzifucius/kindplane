@@ -23,6 +23,22 @@ It automates the tedious process of setting up a local Kubernetes development en
 
 ## Installation
 
+### Quick Install (Recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kanzifucius/kindplane/main/install.sh | bash
+```
+
+Or install a specific version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kanzifucius/kindplane/main/install.sh | KINDPLANE_VERSION=v0.1.0 bash
+```
+
+### Download Binary
+
+Download the latest release from the [releases page](https://github.com/kanzifucius/kindplane/releases).
+
 ### From Source
 
 ```bash
