@@ -177,8 +177,8 @@ tasks:
         msg: "TAG must be a valid semver (e.g., v1.0.0 or v1.0.0-rc.1)"
       - sh: command -v gh >/dev/null 2>&1
         msg: "GitHub CLI (gh) is required but not installed"
-      - sh: git tag -l "{{.TAG}}" | grep -q "{{.TAG}}"
-        msg: "Tag {{.TAG}} does not exist locally or remotely"
+      - sh: git tag -l "{{.TAG}}" | grep -qxF "{{.TAG}}"
+        msg: "Tag {{.TAG}} does not exist locally"
     prompt: "Are you sure you want to delete release {{.TAG}}? This cannot be undone."
     cmds:
       - echo "Deleting GitHub release {{.TAG}}..."
