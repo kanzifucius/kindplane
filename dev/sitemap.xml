@@ -197,6 +197,10 @@
          <lastmod>2026-01-24</lastmod>
     </url>
     <url>
+         <loc>https://kanzifucius.github.io/kindplane/dev/configuration/trusted-cas/</loc>
+         <lastmod>2026-01-24</lastmod>
+    </url>
+    <url>
          <loc>https://kanzifucius.github.io/kindplane/dev/development/building/</loc>
          <lastmod>2026-01-24</lastmod>
     </url>
@@ -226,6 +230,10 @@
     </url>
     <url>
          <loc>https://kanzifucius.github.io/kindplane/dev/guides/gitops/</loc>
+         <lastmod>2026-01-24</lastmod>
+    </url>
+    <url>
+         <loc>https://kanzifucius.github.io/kindplane/dev/guides/local-registry/</loc>
          <lastmod>2026-01-24</lastmod>
     </url>
     <url>
