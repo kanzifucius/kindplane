@@ -109,9 +109,16 @@ jobs:
     steps:
       - name: Check CI status
         run: |
+          echo "Changes result: ${{ needs.changes.result }}"
           echo "Changes detected: ${{ needs.changes.outputs.code }}"
           echo "Test result: ${{ needs.test.result }}"
           echo "Build result: ${{ needs.build.result }}"
+
+          # First, verify the change detection job succeeded
+          if [[ "${{ needs.changes.result }}" != "success" ]]; then
+            echo "::error::Change detection job failed with result: ${{ needs.changes.result }}"
+            exit 1
+          fi
 
           # If no code changes, CI passes (jobs were skipped)
           if [[ "${{ needs.changes.outputs.code }}" != "true" ]]; then
