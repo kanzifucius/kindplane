@@ -8,9 +8,11 @@ import (
 
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 
 	"github.com/kanzi/kindplane/internal/config"
 	"github.com/kanzi/kindplane/internal/crossplane"
@@ -515,15 +517,23 @@ help: "https://kind.sigs.k8s.io/docs/user/local-registry/"
 		},
 	}
 
-	// Try to create, update if it already exists
-	_, err := client.CoreV1().ConfigMaps("kube-public").Create(ctx, configMap, metav1.CreateOptions{})
-	if err != nil {
-		// Try update if create fails (might already exist)
-		_, err = client.CoreV1().ConfigMaps("kube-public").Update(ctx, configMap, metav1.UpdateOptions{})
-		if err != nil {
-			return fmt.Errorf("failed to create/update registry ConfigMap: %w", err)
+	cmClient := client.CoreV1().ConfigMaps("kube-public")
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		_, err := cmClient.Create(ctx, configMap, metav1.CreateOptions{})
+		if err == nil {
+			return nil
 		}
-	}
+		if !apierrors.IsAlreadyExists(err) {
+			return fmt.Errorf("failed to create registry ConfigMap: %w", err)
+		}
 
-	return nil
+		existing, getErr := cmClient.Get(ctx, configMap.Name, metav1.GetOptions{})
+		if getErr != nil {
+			return fmt.Errorf("failed to get existing registry ConfigMap: %w", getErr)
+		}
+		configMap.ResourceVersion = existing.ResourceVersion
+		_, err = cmClient.Update(ctx, configMap, metav1.UpdateOptions{})
+		return err
+	})
+	return err
 }

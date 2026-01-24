@@ -67,8 +67,12 @@ func (c *Config) Validate() error {
 		if reg.CAFile == "" {
 			errs = append(errs, fmt.Sprintf("cluster.trustedCAs.registries[%d].caFile is required", i))
 		} else {
-			if _, err := os.Stat(reg.CAFile); os.IsNotExist(err) {
-				errs = append(errs, fmt.Sprintf("cluster.trustedCAs.registries[%d].caFile not found: %s", i, reg.CAFile))
+			if _, err := os.Stat(reg.CAFile); err != nil {
+				if os.IsNotExist(err) {
+					errs = append(errs, fmt.Sprintf("cluster.trustedCAs.registries[%d].caFile not found: %s", i, reg.CAFile))
+				} else {
+					errs = append(errs, fmt.Sprintf("cluster.trustedCAs.registries[%d].caFile cannot be accessed: %s (%v)", i, reg.CAFile, err))
+				}
 			}
 		}
 	}
@@ -87,8 +91,12 @@ func (c *Config) Validate() error {
 		if wl.CAFile == "" {
 			errs = append(errs, fmt.Sprintf("cluster.trustedCAs.workloads[%d].caFile is required", i))
 		} else {
-			if _, err := os.Stat(wl.CAFile); os.IsNotExist(err) {
-				errs = append(errs, fmt.Sprintf("cluster.trustedCAs.workloads[%d].caFile not found: %s", i, wl.CAFile))
+			if _, err := os.Stat(wl.CAFile); err != nil {
+				if os.IsNotExist(err) {
+					errs = append(errs, fmt.Sprintf("cluster.trustedCAs.workloads[%d].caFile not found: %s", i, wl.CAFile))
+				} else {
+					errs = append(errs, fmt.Sprintf("cluster.trustedCAs.workloads[%d].caFile cannot be accessed: %s (%v)", i, wl.CAFile, err))
+				}
 			}
 		}
 	}
