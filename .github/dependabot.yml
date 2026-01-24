@@ -1,0 +1,32 @@
+version: 2
+updates:
+  # Enable version updates for Go modules
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "go"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    reviewers:
+      - "kanzifucius"
+    assignees:
+      - "kanzifucius"
+    # Group minor and patch updates together
+    groups:
+      go-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    # Ignore major version updates (require manual review)
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
