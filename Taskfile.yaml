@@ -168,6 +168,27 @@ tasks:
       - echo "Tag {{.TAG}} pushed. GitHub Actions release workflow triggered."
       - echo "Monitor at https://github.com/kanzifucius/kindplane/actions"
 
+  release:delete:
+    desc: "Delete a GitHub release and its tag (usage: task release:delete TAG=v1.0.0)"
+    requires:
+      vars: [TAG]
+    preconditions:
+      - sh: echo "{{.TAG}}" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'
+        msg: "TAG must be a valid semver (e.g., v1.0.0 or v1.0.0-rc.1)"
+      - sh: command -v gh >/dev/null 2>&1
+        msg: "GitHub CLI (gh) is required but not installed"
+      - sh: git tag -l "{{.TAG}}" | grep -qxF "{{.TAG}}"
+        msg: "Tag {{.TAG}} does not exist locally"
+    prompt: "Are you sure you want to delete release {{.TAG}}? This cannot be undone."
+    cmds:
+      - echo "Deleting GitHub release {{.TAG}}..."
+      - gh release delete "{{.TAG}}" --yes || echo "No GitHub release found for {{.TAG}}"
+      - echo "Deleting remote tag {{.TAG}}..."
+      - git push origin --delete "{{.TAG}}" || echo "Remote tag {{.TAG}} not found"
+      - echo "Deleting local tag {{.TAG}}..."
+      - git tag -d "{{.TAG}}" || echo "Local tag {{.TAG}} not found"
+      - echo "Release {{.TAG}} deleted successfully."
+
   tools:
     desc: Install development tools
     cmds:
@@ -222,6 +243,19 @@ tasks:
       - |
         docker run --rm -it -p 8000:8000 -v {{.ROOT_DIR}}:/docs -w /docs squidfunk/mkdocs-material \
           sh -c "pip install mike && mike serve --dev-addr=0.0.0.0:8000"
+
+  docs:version:delete:
+    desc: "Delete a versioned doc (usage: task docs:version:delete VERSION=1.0.0)"
+    requires:
+      vars: [VERSION]
+    prompt: "Are you sure you want to delete docs version {{.VERSION}}? This cannot be undone."
+    cmds:
+      - |
+        docker run --rm -v {{.ROOT_DIR}}:/docs -v ~/.gitconfig:/root/.gitconfig:ro \
+          -v ~/.ssh:/root/.ssh:ro \
+          -w /docs squidfunk/mkdocs-material \
+          sh -c "pip install mike && mike delete {{.VERSION}} --push"
+      - echo "Documentation version {{.VERSION}} deleted."
 
   # VHS screen recording tasks
   vhs:all:
