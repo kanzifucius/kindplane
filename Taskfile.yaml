@@ -115,6 +115,12 @@ tasks:
     cmds:
       - ./bin/{{.BINARY_NAME}} status
 
+  dev:run:
+    desc: "Build and run any command (usage: task dev:run -- status)"
+    deps: [build]
+    cmds:
+      - ./bin/{{.BINARY_NAME}} {{.CLI_ARGS}}
+
   check:
     desc: Run all checks (fmt, lint, test)
     cmds:
@@ -205,3 +211,50 @@ tasks:
       - |
         docker run --rm -it -p 8000:8000 -v {{.ROOT_DIR}}:/docs -w /docs squidfunk/mkdocs-material \
           sh -c "pip install mike && mike serve --dev-addr=0.0.0.0:8000"
+
+  # VHS screen recording tasks
+  vhs:all:
+    desc: Generate all VHS recordings in correct dependency order
+    deps: [build]
+    cmds:
+      - mkdir -p docs/assets/vhs
+      # Standalone commands (no prerequisites)
+      - vhs vhs/doctor.tape
+      - vhs vhs/init.tape
+      - vhs vhs/cluster-list.tape
+      # Commands requiring config file (init runs first in tape)
+      - vhs vhs/validate.tape
+      - vhs vhs/config-show.tape
+      - vhs vhs/config-diff.tape
+      # Create cluster (this takes longest)
+      - vhs vhs/up.tape
+      # Commands requiring cluster (assumes cluster exists)
+      - vhs vhs/status.tape
+      - vhs vhs/logs.tape
+      - vhs vhs/diagnostics.tape
+      - vhs vhs/apply.tape
+      - vhs vhs/dump.tape
+      - vhs vhs/chart-list.tape
+      - vhs vhs/chart-install.tape
+      - vhs vhs/chart-upgrade.tape
+      - vhs vhs/chart-uninstall.tape
+      - vhs vhs/provider-list.tape
+      - vhs vhs/provider-add.tape
+      - vhs vhs/provider-remove.tape
+      - vhs vhs/credentials-list.tape
+      - vhs vhs/credentials-configure.tape
+      - vhs vhs/down.tape
+
+  vhs:single:
+    desc: "Generate single VHS recording (usage: task vhs:single TAPE=init)"
+    requires:
+      vars: [TAPE]
+    deps: [build]
+    cmds:
+      - mkdir -p docs/assets/vhs
+      - vhs "vhs/{{.TAPE}}.tape"
+
+  vhs:clean:
+    desc: Remove generated VHS recordings
+    cmds:
+      - rm -rf docs/assets/vhs/*.gif

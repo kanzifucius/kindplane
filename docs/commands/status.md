@@ -1,5 +1,7 @@
 # kindplane status
 
+![kindplane status demo](../assets/vhs/status.gif)
+
 Show cluster and component status.
 
 ## Usage

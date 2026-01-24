@@ -18,6 +18,8 @@ kindplane chart <command> [flags]
 
 ## kindplane chart list
 
+![kindplane chart list demo](../assets/vhs/chart-list.gif)
+
 List all Helm releases in the cluster.
 
 ### Usage
@@ -43,6 +45,8 @@ kindplane chart list
 ```
 
 ## kindplane chart install
+
+![kindplane chart install demo](../assets/vhs/chart-install.gif)
 
 Install a Helm chart to the cluster.
 
@@ -113,6 +117,8 @@ kindplane chart install nginx https://kubernetes.github.io/ingress-nginx ingress
 ```
 
 ## kindplane chart uninstall
+
+![kindplane chart uninstall demo](../assets/vhs/chart-uninstall.gif)
 
 Uninstall a Helm release from the cluster.
 

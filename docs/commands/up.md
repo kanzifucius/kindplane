@@ -1,5 +1,7 @@
 # kindplane up
 
+![kindplane up demo](../assets/vhs/up.gif)
+
 Create and bootstrap a Kind cluster with Crossplane.
 
 ## Usage

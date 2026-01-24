@@ -1,5 +1,7 @@
 # kindplane down
 
+![kindplane down demo](../assets/vhs/down.gif)
+
 Delete the Kind cluster.
 
 ## Usage

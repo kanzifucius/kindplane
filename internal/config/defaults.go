@@ -30,14 +30,6 @@ func DefaultConfig() *Config {
 			Version: "1.15.0",
 			Providers: []ProviderConfig{
 				{
-					Name:    "provider-aws",
-					Package: "xpkg.upbound.io/upbound/provider-aws:v1.1.0",
-				},
-				{
-					Name:    "provider-azure",
-					Package: "xpkg.upbound.io/upbound/provider-azure:v1.0.0",
-				},
-				{
 					Name:    "provider-kubernetes",
 					Package: "xpkg.upbound.io/crossplane-contrib/provider-kubernetes:v0.12.0",
 				},
@@ -116,29 +108,31 @@ crossplane:
   # Crossplane providers to install
   # Use full OCI package path with version tag
   providers:
-    - name: provider-aws
-      package: xpkg.upbound.io/upbound/provider-aws:v1.1.0
-    - name: provider-azure
-      package: xpkg.upbound.io/upbound/provider-azure:v1.0.0
     - name: provider-kubernetes
       package: xpkg.upbound.io/crossplane-contrib/provider-kubernetes:v0.12.0
+    # Example: Add AWS provider
+    # - name: provider-aws
+    #   package: xpkg.upbound.io/upbound/provider-aws:v1.1.0
+    # Example: Add Azure provider
+    # - name: provider-azure
+    #   package: xpkg.upbound.io/upbound/provider-azure:v1.0.0
 
 credentials:
-  # AWS credentials configuration
-  aws:
-    # Source: env (environment variables), file (credentials file), profile (AWS CLI profile)
-    source: env
-    profile: default
-  
-  # Azure credentials configuration
-  azure:
-    # Source: env (environment variables), file (credentials file)
-    source: env
-  
   # Kubernetes provider credentials
   kubernetes:
     # Source: incluster (use service account), kubeconfig (use kubeconfig file)
     source: incluster
+  
+  # AWS credentials configuration (uncomment if using provider-aws)
+  # aws:
+  #   # Source: env (environment variables), file (credentials file), profile (AWS CLI profile)
+  #   source: env
+  #   profile: default
+  
+  # Azure credentials configuration (uncomment if using provider-azure)
+  # azure:
+  #   # Source: env (environment variables), file (credentials file)
+  #   source: env
 
 # External Secrets Operator configuration
 eso:

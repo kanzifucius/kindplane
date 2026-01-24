@@ -1,5 +1,7 @@
 # kindplane init
 
+![kindplane init demo](../assets/vhs/init.gif)
+
 Initialise a new configuration file with sensible defaults.
 
 ## Usage
