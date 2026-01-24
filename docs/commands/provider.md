@@ -17,6 +17,8 @@ kindplane provider <command> [flags]
 
 ## kindplane provider list
 
+![kindplane provider list demo](../assets/vhs/provider-list.gif)
+
 List all installed Crossplane providers.
 
 ### Usage
@@ -41,6 +43,8 @@ kindplane provider list
 ```
 
 ## kindplane provider add
+
+![kindplane provider add demo](../assets/vhs/provider-add.gif)
 
 Add a new Crossplane provider to the cluster.
 

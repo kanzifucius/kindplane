@@ -1,0 +1,3 @@
+# This directory will contain generated VHS GIF recordings
+
+Run `task vhs:all` to generate all recordings, or `task vhs:single TAPE=<name>` for individual recordings.

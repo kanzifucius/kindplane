@@ -1,5 +1,7 @@
 # kindplane validate
 
+![kindplane validate demo](../assets/vhs/validate.gif)
+
 Validate a configuration file without creating a cluster.
 
 ## Usage
