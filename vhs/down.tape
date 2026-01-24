@@ -6,4 +6,8 @@ Output docs/assets/vhs/down.gif
 Type "kindplane down"
 Sleep 500ms
 Enter
+Sleep 1s
+Type "y"
+Sleep 500ms
+Enter
 Sleep 3s

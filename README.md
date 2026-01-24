@@ -29,6 +29,8 @@ It automates the tedious process of setting up a local Kubernetes development en
 - 🎨 **Beautiful CLI** - Rich terminal output with colors, icons, and progress indicators
 - 🔍 **Smart diagnostics** - Detailed failure diagnostics with pod logs and conditions
 - 💾 **GitOps export** - Dump cluster resources in GitOps-friendly format
+- 🔐 **Private registry support** - Trust custom CA certificates for private container registries
+- 📦 **Local registry** - Built-in local container registry for faster image iteration
 
 ## See it in Action
 
@@ -191,6 +193,15 @@ cluster:
       protocol: TCP
   ingress:
     enabled: true
+  # Local container registry (optional)
+  # registry:
+  #   enabled: true
+  #   port: 5001
+  # Trusted CA certificates (optional)
+  # trustedCAs:
+  #   registries:
+  #     - host: "registry.example.com"
+  #       caFile: "./certs/registry-ca.crt"
 
 # Crossplane configuration
 crossplane:

@@ -22,12 +22,16 @@ var (
 
 var listCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List all Kind clusters",
-	Long: `List all Kind clusters on the system.
+	Short: "List kindplane-managed Kind clusters",
+	Long: `List kindplane-managed Kind clusters on the system.
 
-By default, shows all Kind clusters. Use --format to change the output format.`,
-	Example: `  # List all Kind clusters
+By default, shows only clusters created by kindplane. Use --all to show all Kind clusters.
+Use --format to change the output format.`,
+	Example: `  # List kindplane-managed clusters
   kindplane cluster list
+
+  # List all Kind clusters (including non-kindplane)
+  kindplane cluster list --all
 
   # List in JSON format
   kindplane cluster list --format json`,
@@ -35,7 +39,7 @@ By default, shows all Kind clusters. Use --format to change the output format.`,
 }
 
 func init() {
-	listCmd.Flags().BoolVarP(&listAll, "all", "a", true, "Show all Kind clusters (not just kindplane-managed)")
+	listCmd.Flags().BoolVarP(&listAll, "all", "a", false, "Show all Kind clusters (not just kindplane-managed)")
 	listCmd.Flags().StringVar(&listFormat, "format", "table", "Output format (table, json)")
 	listCmd.Flags().DurationVar(&listTimeout, "timeout", 30*time.Second, "Timeout for listing clusters")
 }
@@ -66,13 +70,17 @@ func runList(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(clusters) == 0 {
-		fmt.Println(ui.Warning("No Kind clusters found"))
+		if listAll {
+			fmt.Println(ui.Warning("No Kind clusters found"))
+		} else {
+			fmt.Println(ui.Warning("No kindplane-managed clusters found"))
+		}
 		fmt.Println()
 		fmt.Println(ui.InfoBox("Hint", "Run 'kindplane up' to create a cluster."))
 		return nil
 	}
 
-	// Gather cluster information
+	// Gather cluster information and filter by kindplane label if needed
 	var clusterInfos []ClusterInfo
 	for _, clusterName := range clusters {
 		info := ClusterInfo{
@@ -84,19 +92,35 @@ func runList(cmd *cobra.Command, args []string) error {
 		kubeClient, err := kind.GetKubeClient(clusterName)
 		if err != nil {
 			info.Status = "Unknown"
+			// If we can't connect and --all is false, skip this cluster
+			// (it might not be a kindplane cluster or might be unreachable)
+			if !listAll {
+				continue
+			}
 		} else {
 			// Check if cluster is accessible
 			_, err := kubeClient.CoreV1().Namespaces().List(ctx, metav1.ListOptions{Limit: 1})
 			if err != nil {
 				info.Status = "Unreachable"
+				// If unreachable and --all is false, skip this cluster
+				if !listAll {
+					continue
+				}
 			} else {
 				info.Status = "Running"
 
-				// Get node count
+				// Get node count and check for kindplane label
 				nodes, err := kubeClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 				if err == nil {
 					info.Nodes = len(nodes.Items)
+					isKindplaneManaged := false
+
 					for _, node := range nodes.Items {
+						// Check if this is a kindplane-managed cluster
+						if node.Labels["kindplane.io/managed-by"] == "kindplane" {
+							isKindplaneManaged = true
+						}
+
 						// Check if control plane
 						if _, ok := node.Labels["node-role.kubernetes.io/control-plane"]; ok {
 							info.ControlPlanes++
@@ -109,11 +133,33 @@ func runList(cmd *cobra.Command, args []string) error {
 							info.KubernetesVersion = node.Status.NodeInfo.KubeletVersion
 						}
 					}
+
+					// Filter out non-kindplane clusters unless --all is set
+					if !listAll && !isKindplaneManaged {
+						continue
+					}
+				} else {
+					// If we can't list nodes and --all is false, skip this cluster
+					if !listAll {
+						continue
+					}
 				}
 			}
 		}
 
 		clusterInfos = append(clusterInfos, info)
+	}
+
+	// Check if we have any clusters after filtering
+	if len(clusterInfos) == 0 {
+		if listAll {
+			fmt.Println(ui.Warning("No Kind clusters found"))
+		} else {
+			fmt.Println(ui.Warning("No kindplane-managed clusters found"))
+			fmt.Println()
+			fmt.Println(ui.InfoBox("Hint", "Use 'kindplane cluster list --all' to see all Kind clusters."))
+		}
+		return nil
 	}
 
 	// Output based on format

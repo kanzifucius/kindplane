@@ -44,8 +44,6 @@ kindplane provider list
 
 ## kindplane provider add
 
-![kindplane provider add demo](../assets/vhs/provider-add.gif)
-
 Add a new Crossplane provider to the cluster.
 
 ### Usage

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/kanzi/kindplane/internal/eso"
 	"github.com/kanzi/kindplane/internal/helm"
 	"github.com/kanzi/kindplane/internal/kind"
+	"github.com/kanzi/kindplane/internal/registry"
 	"github.com/kanzi/kindplane/internal/ui"
 )
 
@@ -105,6 +108,18 @@ func runUp(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Step 0: Create local registry if enabled
+	var registryManager *registry.Manager
+	if cfg.Cluster.Registry.Enabled {
+		printInfo("Creating local container registry...")
+		registryManager = registry.NewManager(&cfg.Cluster.Registry)
+		if err := registryManager.Create(ctx); err != nil {
+			printError("Failed to create registry: %v", err)
+			return err
+		}
+		printSuccess("Local registry created at localhost:%d", cfg.Cluster.Registry.GetPort())
+	}
+
 	// Step 1: Create Kind cluster
 	printInfo("Creating Kind cluster '%s'...", cfg.Cluster.Name)
 
@@ -123,6 +138,24 @@ func runUp(cmd *cobra.Command, args []string) error {
 		}
 		clusterCreated = true
 		printSuccess("Kind cluster created")
+	}
+
+	// Configure registry for cluster nodes if enabled
+	if cfg.Cluster.Registry.Enabled && registryManager != nil {
+		// Configure nodes to use the registry
+		if err := registryManager.ConfigureNodes(ctx, cfg.Cluster.Name); err != nil {
+			printError("Failed to configure registry on nodes: %v", err)
+			rollback()
+			return err
+		}
+
+		// Connect registry to Kind network
+		if err := registryManager.ConnectToNetwork(ctx, "kind"); err != nil {
+			printError("Failed to connect registry to Kind network: %v", err)
+			rollback()
+			return err
+		}
+		printSuccess("Registry configured for cluster nodes")
 	}
 
 	// Get kubernetes client
@@ -157,6 +190,14 @@ func runUp(cmd *cobra.Command, args []string) error {
 		kubeClient:    kubeClient,
 		dynamicClient: dynamicClient,
 		diagCollector: diagCollector,
+	}
+
+	// Create local registry ConfigMap for discovery
+	if cfg.Cluster.Registry.Enabled && registryManager != nil {
+		if err := createRegistryConfigMap(ctx, kubeClient, &cfg.Cluster.Registry); err != nil {
+			printWarn("Failed to create registry ConfigMap: %v", err)
+			// Non-fatal - continue with bootstrap
+		}
 	}
 
 	// Create Helm installer for chart installations
@@ -456,4 +497,33 @@ func showChartDiagnostics(bc *bootstrapContext, chart config.ChartConfig) {
 	}
 
 	report.Print(os.Stdout)
+}
+
+// createRegistryConfigMap creates the local-registry-hosting ConfigMap
+// This follows the KEP-1755 standard for documenting local registries
+// https://github.com/kubernetes/enhancements/tree/master/keps/sig-cluster-lifecycle/generic/1755-communicating-a-local-registry
+func createRegistryConfigMap(ctx context.Context, client *kubernetes.Clientset, regCfg *config.RegistryConfig) error {
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "local-registry-hosting",
+			Namespace: "kube-public",
+		},
+		Data: map[string]string{
+			"localRegistryHosting.v1": fmt.Sprintf(`host: "localhost:%d"
+help: "https://kind.sigs.k8s.io/docs/user/local-registry/"
+`, regCfg.GetPort()),
+		},
+	}
+
+	// Try to create, update if it already exists
+	_, err := client.CoreV1().ConfigMaps("kube-public").Create(ctx, configMap, metav1.CreateOptions{})
+	if err != nil {
+		// Try update if create fails (might already exist)
+		_, err = client.CoreV1().ConfigMaps("kube-public").Update(ctx, configMap, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to create/update registry ConfigMap: %w", err)
+		}
+	}
+
+	return nil
 }

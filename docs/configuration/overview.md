@@ -154,6 +154,7 @@ compositions:
 | Section | Description | Required |
 |---------|-------------|----------|
 | [cluster](cluster.md) | Kind cluster settings | Yes |
+| [cluster.trustedCAs](trusted-cas.md) | Trusted CA certificates | No |
 | [crossplane](crossplane.md) | Crossplane installation | Yes |
 | [credentials](credentials.md) | Cloud provider credentials | No |
 | [eso](eso.md) | External Secrets Operator | No |

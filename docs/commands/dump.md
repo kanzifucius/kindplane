@@ -1,7 +1,5 @@
 # kindplane dump
 
-![kindplane dump demo](../assets/vhs/dump.gif)
-
 Export cluster resources for GitOps workflows.
 
 ## Usage

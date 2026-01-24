@@ -44,6 +44,55 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	// Validate registry config
+	if c.Cluster.Registry.Enabled {
+		port := c.Cluster.Registry.GetPort()
+		if port < 1 || port > 65535 {
+			errs = append(errs, fmt.Sprintf("cluster.registry.port must be between 1 and 65535 (got: %d)", port))
+		}
+	}
+
+	// Validate trusted CAs config
+	registryHosts := make(map[string]bool)
+	for i, reg := range c.Cluster.TrustedCAs.Registries {
+		if reg.Host == "" {
+			errs = append(errs, fmt.Sprintf("cluster.trustedCAs.registries[%d].host is required", i))
+		} else {
+			// Check for duplicate hosts
+			if registryHosts[reg.Host] {
+				errs = append(errs, fmt.Sprintf("cluster.trustedCAs.registries[%d].host '%s' is duplicated", i, reg.Host))
+			}
+			registryHosts[reg.Host] = true
+		}
+		if reg.CAFile == "" {
+			errs = append(errs, fmt.Sprintf("cluster.trustedCAs.registries[%d].caFile is required", i))
+		} else {
+			if _, err := os.Stat(reg.CAFile); os.IsNotExist(err) {
+				errs = append(errs, fmt.Sprintf("cluster.trustedCAs.registries[%d].caFile not found: %s", i, reg.CAFile))
+			}
+		}
+	}
+
+	workloadCANames := make(map[string]bool)
+	for i, wl := range c.Cluster.TrustedCAs.Workloads {
+		if wl.Name == "" {
+			errs = append(errs, fmt.Sprintf("cluster.trustedCAs.workloads[%d].name is required", i))
+		} else {
+			// Check for duplicate names
+			if workloadCANames[wl.Name] {
+				errs = append(errs, fmt.Sprintf("cluster.trustedCAs.workloads[%d].name '%s' is duplicated", i, wl.Name))
+			}
+			workloadCANames[wl.Name] = true
+		}
+		if wl.CAFile == "" {
+			errs = append(errs, fmt.Sprintf("cluster.trustedCAs.workloads[%d].caFile is required", i))
+		} else {
+			if _, err := os.Stat(wl.CAFile); os.IsNotExist(err) {
+				errs = append(errs, fmt.Sprintf("cluster.trustedCAs.workloads[%d].caFile not found: %s", i, wl.CAFile))
+			}
+		}
+	}
+
 	// Validate crossplane config
 	if c.Crossplane.Version == "" {
 		errs = append(errs, "crossplane.version is required")

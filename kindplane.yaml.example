@@ -35,6 +35,14 @@ cluster:
   ingress:
     enabled: true
   
+  # Local container registry configuration (optional)
+  # When enabled, creates a local Docker registry that Kind nodes can pull from
+  # registry:
+  #   enabled: true      # Create a local registry container
+  #   port: 5001         # Host port for the registry (default: 5001)
+  #   persistent: false  # Keep registry after kindplane down (default: false)
+  #   name: kind-registry # Registry container name (default: kind-registry)
+  
   # Optional: path to a raw Kind config file
   # Settings from kindplane.yaml will be merged on top (kindplane wins)
   # rawConfigPath: ""

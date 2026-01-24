@@ -25,13 +25,39 @@ type Config struct {
 
 // ClusterConfig contains Kind cluster configuration
 type ClusterConfig struct {
-	Name              string        `yaml:"name"`
-	KubernetesVersion string        `yaml:"kubernetesVersion"`
-	Nodes             NodesConfig   `yaml:"nodes"`
-	PortMappings      []PortMapping `yaml:"portMappings,omitempty"`
-	ExtraMounts       []ExtraMount  `yaml:"extraMounts,omitempty"`
-	Ingress           IngressConfig `yaml:"ingress"`
-	RawConfigPath     string        `yaml:"rawConfigPath,omitempty"`
+	Name              string           `yaml:"name"`
+	KubernetesVersion string           `yaml:"kubernetesVersion"`
+	Nodes             NodesConfig      `yaml:"nodes"`
+	PortMappings      []PortMapping    `yaml:"portMappings,omitempty"`
+	ExtraMounts       []ExtraMount     `yaml:"extraMounts,omitempty"`
+	Ingress           IngressConfig    `yaml:"ingress"`
+	Registry          RegistryConfig   `yaml:"registry,omitempty"`
+	TrustedCAs        TrustedCAsConfig `yaml:"trustedCAs,omitempty"`
+	RawConfigPath     string           `yaml:"rawConfigPath,omitempty"`
+}
+
+// RegistryConfig contains local container registry configuration
+type RegistryConfig struct {
+	Enabled    bool   `yaml:"enabled"`              // Enable local container registry
+	Port       int    `yaml:"port,omitempty"`       // Host port for the registry (default: 5001)
+	Persistent bool   `yaml:"persistent,omitempty"` // Keep registry container after kindplane down
+	Name       string `yaml:"name,omitempty"`       // Registry container name (default: kind-registry)
+}
+
+// GetPort returns the registry port, defaulting to 5001
+func (r *RegistryConfig) GetPort() int {
+	if r.Port == 0 {
+		return 5001
+	}
+	return r.Port
+}
+
+// GetName returns the registry container name, defaulting to kind-registry
+func (r *RegistryConfig) GetName() string {
+	if r.Name == "" {
+		return "kind-registry"
+	}
+	return r.Name
 }
 
 // NodesConfig defines the number of nodes in the cluster
@@ -57,6 +83,24 @@ type ExtraMount struct {
 // IngressConfig defines ingress controller readiness settings
 type IngressConfig struct {
 	Enabled bool `yaml:"enabled"`
+}
+
+// TrustedCAsConfig contains trusted CA certificate configuration
+type TrustedCAsConfig struct {
+	Registries []RegistryCA `yaml:"registries,omitempty"` // CA certificates for private container registries
+	Workloads  []WorkloadCA `yaml:"workloads,omitempty"`  // CA certificates to mount for workloads
+}
+
+// RegistryCA defines a CA certificate for a private container registry
+type RegistryCA struct {
+	Host   string `yaml:"host"`   // Registry host (e.g., "registry.example.com:5000" or "*.internal.company.com")
+	CAFile string `yaml:"caFile"` // Path to CA certificate file on the host
+}
+
+// WorkloadCA defines a CA certificate to mount for workloads
+type WorkloadCA struct {
+	Name   string `yaml:"name"`   // Identifier for the CA (used in the mount path)
+	CAFile string `yaml:"caFile"` // Path to CA certificate file on the host
 }
 
 // CrossplaneConfig contains Crossplane installation settings
@@ -203,6 +247,11 @@ func (c *Config) Save(path string) error {
 	data, err := yaml.Marshal(c)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	// Create parent directories if they don't exist
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
 	if err := os.WriteFile(path, data, 0644); err != nil {

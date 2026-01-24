@@ -16,8 +16,6 @@ kindplane credentials <command> [flags]
 
 ## kindplane credentials configure
 
-![kindplane credentials configure demo](../assets/vhs/credentials-configure.gif)
-
 Interactively configure credentials for cloud providers.
 
 ### Usage

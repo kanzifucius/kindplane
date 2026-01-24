@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/kanzi/kindplane/internal/kind"
+	"github.com/kanzi/kindplane/internal/registry"
 )
 
 var (
@@ -81,6 +82,20 @@ func runDown(cmd *cobra.Command, args []string) error {
 	}
 
 	printSuccess("Cluster '%s' deleted", clusterName)
+
+	// Clean up registry if enabled and not persistent
+	if cfg.Cluster.Registry.Enabled && !cfg.Cluster.Registry.Persistent {
+		printInfo("Removing local registry...")
+		registryManager := registry.NewManager(&cfg.Cluster.Registry)
+		if err := registryManager.Remove(ctx); err != nil {
+			printWarn("Failed to remove registry: %v", err)
+			// Non-fatal - continue
+		} else {
+			printSuccess("Local registry removed")
+		}
+	} else if cfg.Cluster.Registry.Enabled && cfg.Cluster.Registry.Persistent {
+		printInfo("Local registry preserved (persistent mode)")
+	}
 
 	return nil
 }
