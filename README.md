@@ -66,39 +66,6 @@ kindplane down --force
 
 ![kindplane down](docs/assets/vhs/down.gif)
 
-## See it in Action
-
-### Initialise Configuration
-
-```bash
-kindplane init
-```
-
-![kindplane init](docs/assets/vhs/init.gif)
-
-### Create Cluster
-
-```bash
-kindplane up
-```
-
-![kindplane up](docs/assets/vhs/up.gif)
-
-### Check Status
-
-```bash
-kindplane status
-```
-
-![kindplane status](docs/assets/vhs/status.gif)
-
-### Delete Cluster
-
-```bash
-kindplane down --force
-```
-
-![kindplane down](docs/assets/vhs/down.gif)
 
 ## Installation
 
