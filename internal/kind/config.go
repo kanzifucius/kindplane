@@ -73,7 +73,7 @@ func BuildKindConfig(cfg *config.Config) (string, error) {
 	kindConfig.Nodes = buildNodes(cfg, kindConfig.Nodes)
 
 	// Add containerd config patches for trusted registry CAs
-	kindConfig.ContainerdConfigPatches = buildContainerdPatches(cfg)
+	kindConfig.ContainerdConfigPatches = append(kindConfig.ContainerdConfigPatches, buildContainerdPatches(cfg)...)
 
 	// Marshal to YAML
 	var buf bytes.Buffer

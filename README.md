@@ -415,7 +415,7 @@ When bootstrap fails, kindplane automatically shows detailed diagnostics:
 ```
 
 ## Project Structure
-
+  
 ```
 kindplane/
 ├── cmd/kindplane/          # Main entry point
