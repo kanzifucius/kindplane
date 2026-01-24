@@ -68,12 +68,80 @@
         "ingress": {
           "$ref": "#/definitions/IngressConfig"
         },
+        "registry": {
+          "$ref": "#/definitions/RegistryConfig"
+        },
+        "trustedCAs": {
+          "$ref": "#/definitions/TrustedCAsConfig"
+        },
         "rawConfigPath": {
           "type": "string",
           "description": "Optional path to a raw Kind config file. Settings from kindplane.yaml will be merged on top (kindplane wins)"
         }
       },
-      "required": ["name"],
+      "required": ["name", "nodes"],
+      "additionalProperties": false
+    },
+    "TrustedCAsConfig": {
+      "type": "object",
+      "description": "Trusted CA certificate configuration for private registries and workloads",
+      "properties": {
+        "registries": {
+          "type": "array",
+          "description": "CA certificates for private container registries (trusted by containerd)",
+          "items": {
+            "$ref": "#/definitions/RegistryCA"
+          }
+        },
+        "workloads": {
+          "type": "array",
+          "description": "CA certificates mounted for workloads to trust",
+          "items": {
+            "$ref": "#/definitions/WorkloadCA"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "RegistryCA": {
+      "type": "object",
+      "description": "CA certificate for a private container registry",
+      "properties": {
+        "host": {
+          "type": "string",
+          "description": "Registry host (e.g., 'registry.example.com:5000' or '*.internal.company.com')",
+          "minLength": 1,
+          "examples": ["registry.example.com:5000", "harbor.internal.com", "*.mycompany.com"]
+        },
+        "caFile": {
+          "type": "string",
+          "description": "Path to CA certificate file on the host",
+          "minLength": 1,
+          "examples": ["./certs/registry-ca.crt", "/path/to/ca.crt"]
+        }
+      },
+      "required": ["host", "caFile"],
+      "additionalProperties": false
+    },
+    "WorkloadCA": {
+      "type": "object",
+      "description": "CA certificate to mount for workloads",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Identifier for the CA (used in the mount path)",
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$",
+          "examples": ["corporate-ca", "internal-root-ca"]
+        },
+        "caFile": {
+          "type": "string",
+          "description": "Path to CA certificate file on the host",
+          "minLength": 1,
+          "examples": ["./certs/corporate-ca.crt", "/path/to/ca.crt"]
+        }
+      },
+      "required": ["name", "caFile"],
       "additionalProperties": false
     },
     "NodesConfig": {
@@ -153,6 +221,36 @@
           "type": "boolean",
           "description": "Enable ingress controller support",
           "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "RegistryConfig": {
+      "type": "object",
+      "description": "Local container registry configuration. When enabled, creates a local Docker registry that Kind nodes can pull images from",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable local container registry",
+          "default": false
+        },
+        "port": {
+          "type": "integer",
+          "description": "Host port for the registry",
+          "minimum": 1,
+          "maximum": 65535,
+          "default": 5001
+        },
+        "persistent": {
+          "type": "boolean",
+          "description": "Keep registry container after kindplane down. When false, the registry is removed with the cluster",
+          "default": false
+        },
+        "name": {
+          "type": "string",
+          "description": "Registry container name",
+          "default": "kind-registry",
+          "minLength": 1
         }
       },
       "additionalProperties": false

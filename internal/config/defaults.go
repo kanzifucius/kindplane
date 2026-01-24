@@ -100,6 +100,19 @@ cluster:
   # Optional: path to a raw Kind config file
   # Settings from kindplane.yaml will be merged on top (kindplane wins)
   # rawConfigPath: ""
+  
+  # Trusted CA certificates for private registries and workloads
+  # trustedCAs:
+  #   # CA certificates for private container registries (trusted by containerd)
+  #   registries:
+  #     - host: "registry.example.com:5000"
+  #       caFile: "./certs/registry-ca.crt"
+  #     - host: "harbor.internal.com"
+  #       caFile: "/path/to/harbor-ca.crt"
+  #   # CA certificates mounted for workloads to trust
+  #   workloads:
+  #     - name: "corporate-root-ca"
+  #       caFile: "./certs/corporate-ca.crt"
 
 crossplane:
   # Crossplane version to install

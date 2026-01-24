@@ -114,6 +114,60 @@ cluster:
 | `containerPath` | string | Yes | Path inside the container |
 | `readOnly` | bool | No | Mount as read-only (default: false) |
 
+### registry
+
+Configure a local container registry for development.
+
+```yaml
+cluster:
+  registry:
+    enabled: true
+    port: 5001
+    persistent: false
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | bool | false | Enable local container registry |
+| `port` | int | 5001 | Host port for the registry |
+| `persistent` | bool | false | Keep registry container after `kindplane down` |
+| `name` | string | kind-registry | Registry container name |
+
+When enabled, kindplane:
+
+1. Creates a local Docker registry container
+2. Configures Kind nodes to pull images from the registry
+3. Connects the registry to the Kind network
+4. Creates a `local-registry-hosting` ConfigMap for discovery
+
+!!! tip "Learn More"
+    See [Local Registry Guide](../guides/local-registry.md) for usage examples and workflow.
+
+### trustedCAs
+
+Configure trusted CA certificates for private registries and workloads.
+
+```yaml
+cluster:
+  trustedCAs:
+    registries:
+      - host: "harbor.mycompany.com"
+        caFile: "./certs/harbor-ca.crt"
+    workloads:
+      - name: "corporate-root-ca"
+        caFile: "./certs/corporate-ca.crt"
+```
+
+| Section | Field | Type | Required | Description |
+|---------|-------|------|----------|-------------|
+| `registries` | `host` | string | Yes | Registry host (e.g., "registry.example.com:5000") |
+| `registries` | `caFile` | string | Yes | Path to CA certificate file |
+| `workloads` | `name` | string | Yes | Identifier for the CA |
+| `workloads` | `caFile` | string | Yes | Path to CA certificate file |
+
+!!! tip "Learn More"
+    See [Trusted CAs](trusted-cas.md) for detailed documentation on certificate configuration.
+
 ### rawConfigPath
 
 Use a raw Kind configuration file as a base.

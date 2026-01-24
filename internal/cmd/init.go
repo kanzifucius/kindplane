@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -58,6 +60,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 	} else {
 		// Generate config with comments
 		content := config.DefaultConfigWithComments()
+		// Create parent directories if they don't exist
+		if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+			return fmt.Errorf("failed to create directory: %w", err)
+		}
 		err = os.WriteFile(configPath, []byte(content), 0644)
 	}
 

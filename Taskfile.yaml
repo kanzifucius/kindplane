@@ -88,38 +88,44 @@ tasks:
   dev:
     desc: Build and show help
     deps: [build]
+    dir: bin
     cmds:
-      - ./bin/{{.BINARY_NAME}} --help
+      - ./{{.BINARY_NAME}} --help
 
   dev:init:
     desc: Build and run init command
     deps: [build]
+    dir: bin
     cmds:
-      - ./bin/{{.BINARY_NAME}} init --force
+      - ./{{.BINARY_NAME}} init --force
 
   dev:up:
     desc: Build and run up command
     deps: [build]
+    dir: bin
     cmds:
-      - ./bin/{{.BINARY_NAME}} up
+      - ./{{.BINARY_NAME}} up
 
   dev:down:
     desc: Build and run down command
     deps: [build]
+    dir: bin
     cmds:
-      - ./bin/{{.BINARY_NAME}} down
+      - ./{{.BINARY_NAME}} down
 
   dev:status:
     desc: Build and run status command
     deps: [build]
+    dir: bin
     cmds:
-      - ./bin/{{.BINARY_NAME}} status
+      - ./{{.BINARY_NAME}} status
 
   dev:run:
     desc: "Build and run any command (usage: task dev:run -- status)"
     deps: [build]
+    dir: bin
     cmds:
-      - ./bin/{{.BINARY_NAME}} {{.CLI_ARGS}}
+      - ./{{.BINARY_NAME}} {{.CLI_ARGS}}
 
   check:
     desc: Run all checks (fmt, lint, test)
@@ -132,6 +138,11 @@ tasks:
     desc: Create a snapshot release (requires goreleaser)
     cmds:
       - goreleaser release --snapshot --clean
+
+  release:tags:
+    desc: List all release tags
+    cmds:
+      - git tag -l --sort=-v:refname 'v*'
 
   release-tag:
     desc: "Create and push a release tag (usage: task release-tag TAG=v1.0.0)"
@@ -219,31 +230,22 @@ tasks:
     cmds:
       - mkdir -p docs/assets/vhs
       # Standalone commands (no prerequisites)
-      - vhs vhs/doctor.tape
-      - vhs vhs/init.tape
-      - vhs vhs/cluster-list.tape
+      - PATH=bin:$PATH vhs vhs/doctor.tape
+      - PATH=bin:$PATH vhs vhs/init.tape
+      - PATH=bin:$PATH vhs vhs/up.tape
+      - PATH=bin:$PATH vhs vhs/cluster-list.tape
       # Commands requiring config file (init runs first in tape)
-      - vhs vhs/validate.tape
-      - vhs vhs/config-show.tape
-      - vhs vhs/config-diff.tape
-      # Create cluster (this takes longest)
-      - vhs vhs/up.tape
+      - PATH=bin:$PATH vhs vhs/validate.tape
+      - PATH=bin:$PATH vhs vhs/status.tape
+      - PATH=bin:$PATH vhs vhs/config-show.tape
+      - PATH=bin:$PATH vhs vhs/config-diff.tape
       # Commands requiring cluster (assumes cluster exists)
-      - vhs vhs/status.tape
-      - vhs vhs/logs.tape
-      - vhs vhs/diagnostics.tape
-      - vhs vhs/apply.tape
-      - vhs vhs/dump.tape
-      - vhs vhs/chart-list.tape
-      - vhs vhs/chart-install.tape
-      - vhs vhs/chart-upgrade.tape
-      - vhs vhs/chart-uninstall.tape
-      - vhs vhs/provider-list.tape
-      - vhs vhs/provider-add.tape
-      - vhs vhs/provider-remove.tape
-      - vhs vhs/credentials-list.tape
-      - vhs vhs/credentials-configure.tape
-      - vhs vhs/down.tape
+      - PATH=bin:$PATH vhs vhs/logs.tape
+      - PATH=bin:$PATH vhs vhs/diagnostics.tape
+      - PATH=bin:$PATH vhs vhs/chart-list.tape
+      - PATH=bin:$PATH vhs vhs/provider-list.tape
+      - PATH=bin:$PATH vhs vhs/credentials-list.tape
+      - PATH=bin:$PATH vhs vhs/down.tape
 
   vhs:single:
     desc: "Generate single VHS recording (usage: task vhs:single TAPE=init)"
@@ -252,9 +254,11 @@ tasks:
     deps: [build]
     cmds:
       - mkdir -p docs/assets/vhs
-      - vhs "vhs/{{.TAPE}}.tape"
+      - PATH=bin:$PATH vhs "vhs/{{.TAPE}}.tape"
 
   vhs:clean:
     desc: Remove generated VHS recordings
     cmds:
       - rm -rf docs/assets/vhs/*.gif
+
+  

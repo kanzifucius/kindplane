@@ -178,6 +178,7 @@ nav:
   - Configuration:
       - Overview: configuration/overview.md
       - Cluster: configuration/cluster.md
+      - Trusted CAs: configuration/trusted-cas.md
       - Crossplane: configuration/crossplane.md
       - Providers: configuration/providers.md
       - External Secrets: configuration/eso.md
@@ -214,6 +215,7 @@ nav:
       - kindplane credentials: cli-reference/kindplane_credentials.md
       - kindplane credentials configure: cli-reference/kindplane_credentials_configure.md
   - Guides:
+      - Local Registry: guides/local-registry.md
       - Working with AWS: guides/aws.md
       - Working with Azure: guides/azure.md
       - GitOps Export: guides/gitops.md

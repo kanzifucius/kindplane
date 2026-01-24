@@ -5,15 +5,12 @@ Set PlaybackSpeed 6
 
 # Ensure config file exists
 Hide
-Type "kindplane init --force"
+Type "kindplane init"
 Enter
 Sleep 1s
 Show
 
 # Create and bootstrap cluster
 Type "kindplane up"
-Sleep 500ms
 Enter
-Sleep 180s
-Set PlaybackSpeed 1
-Sleep 3s
+Sleep 120s
