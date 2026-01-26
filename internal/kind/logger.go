@@ -142,14 +142,16 @@ func (i *infoLogger) Info(message string) {
 	isDone := strings.HasPrefix(trimmedMsg, "✓") || 
 	         strings.Contains(message, " ✓ ") ||
 	         (strings.HasSuffix(trimmedMsg, "✓") && !strings.Contains(trimmedMsg, "..."))
+	isFailed := strings.HasPrefix(trimmedMsg, "✗") || strings.Contains(message, " ✗ ")
 	isInProgress := strings.Contains(message, "...") || strings.Contains(message, " • ")
 	isSuccess := isDone && !strings.Contains(strings.ToLower(message), "error")
 	
 	// Send update - mark as done only if it's a completion message
 	i.logger.updates <- StepUpdate{
 		Step:    step,
-		Done:    isDone && !isInProgress, // Don't mark as done if it's still in progress
-		Success: isSuccess,
+		Done:    (isDone || isFailed) && !isInProgress, // Don't mark as done if it's still in progress
+		Success: isSuccess && !isFailed,
+	}
 	}
 }
 
