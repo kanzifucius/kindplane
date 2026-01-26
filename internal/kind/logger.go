@@ -62,7 +62,7 @@ func (l *Logger) V(level log.Level) log.InfoLogger {
 	return &infoLogger{
 		logger:  l,
 		level:   level,
-		enabled: level <= l.level, // Only enable V(0) and below
+		enabled: level <= l.level, // Enable V(0) and V(1) for progress updates
 	}
 }
 
