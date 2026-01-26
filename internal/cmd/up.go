@@ -123,8 +123,6 @@ func runUp(cmd *cobra.Command, args []string) error {
 	}
 
 	// Step 1: Create Kind cluster
-	printInfo("Creating Kind cluster '%s'...", cfg.Cluster.Name)
-
 	exists, err := kind.ClusterExists(cfg.Cluster.Name)
 	if err != nil {
 		printError("Failed to check cluster status: %v", err)
@@ -134,12 +132,14 @@ func runUp(cmd *cobra.Command, args []string) error {
 	if exists {
 		printWarn("Cluster '%s' already exists, skipping creation", cfg.Cluster.Name)
 	} else {
-		if err := kind.CreateCluster(ctx, cfg); err != nil {
+		if err := ui.RunClusterCreate(ctx, cfg.Cluster.Name, func(ctx context.Context, updates chan<- kind.StepUpdate) error {
+			logger := kind.NewLogger(updates)
+			return kind.CreateClusterWithProgress(ctx, cfg, logger)
+		}); err != nil {
 			printError("Failed to create cluster: %v", err)
 			return err
 		}
 		clusterCreated = true
-		printSuccess("Kind cluster created")
 	}
 
 	// Configure registry for cluster nodes if enabled
