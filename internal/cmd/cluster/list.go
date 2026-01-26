@@ -138,11 +138,9 @@ func runList(cmd *cobra.Command, args []string) error {
 					if !listAll && !isKindplaneManaged {
 						continue
 					}
-				} else {
+				} else if !listAll {
 					// If we can't list nodes and --all is false, skip this cluster
-					if !listAll {
-						continue
-					}
+					continue
 				}
 			}
 		}

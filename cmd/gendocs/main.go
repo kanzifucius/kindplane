@@ -45,10 +45,8 @@ func main() {
 
 // filePrepender adds frontmatter or headers to generated files
 func filePrepender(filename string) string {
-	name := filepath.Base(filename)
-	name = strings.TrimSuffix(name, ".md")
-	name = strings.ReplaceAll(name, "_", " ")
-
+	// Currently returns empty string - frontmatter is handled by mkdocs
+	_ = filename // unused but required by interface
 	return ""
 }
 

@@ -14,12 +14,12 @@ import (
 
 // CheckResult represents the result of a pre-flight check
 type CheckResult struct {
-	Name        string
-	Passed      bool
-	Message     string
-	Details     string
-	Suggestion  string
-	Required    bool
+	Name       string
+	Passed     bool
+	Message    string
+	Details    string
+	Suggestion string
+	Required   bool
 }
 
 // Check is a function that performs a pre-flight check
@@ -29,7 +29,6 @@ type Check func(ctx context.Context) CheckResult
 func RunAllChecks(ctx context.Context, kubeClient *kubernetes.Clientset) []CheckResult {
 	checks := []Check{
 		CheckDocker,
-		CheckKind,
 		CheckKubectl,
 		CheckHelm,
 		CheckDiskSpace,
@@ -78,43 +77,6 @@ func CheckDocker(ctx context.Context) CheckResult {
 	version := strings.TrimSpace(string(output))
 	result.Passed = true
 	result.Message = fmt.Sprintf("Running (v%s)", version)
-	return result
-}
-
-// CheckKind checks if kind binary is available
-func CheckKind(ctx context.Context) CheckResult {
-	result := CheckResult{
-		Name:     "kind binary",
-		Required: true,
-	}
-
-	kindPath, err := exec.LookPath("kind")
-	if err != nil {
-		result.Passed = false
-		result.Message = "kind not found in PATH"
-		result.Suggestion = "Install kind: go install sigs.k8s.io/kind@latest"
-		return result
-	}
-
-	cmd := exec.CommandContext(ctx, kindPath, "version")
-	output, err := cmd.Output()
-	if err != nil {
-		result.Passed = false
-		result.Message = "Failed to get kind version"
-		return result
-	}
-
-	// Parse version from output like "kind v0.20.0 go1.21.0 darwin/arm64"
-	version := strings.TrimSpace(string(output))
-	if strings.Contains(version, " ") {
-		parts := strings.Fields(version)
-		if len(parts) >= 2 {
-			version = parts[1]
-		}
-	}
-
-	result.Passed = true
-	result.Message = fmt.Sprintf("Found (%s)", version)
 	return result
 }
 
@@ -207,7 +169,7 @@ func CheckPort(port int) Check {
 			result.Suggestion = fmt.Sprintf("Run: %s lsof -i :%d", getSudoCommand(), port)
 			return result
 		}
-		listener.Close()
+		_ = listener.Close()
 
 		result.Passed = true
 		result.Message = "Available"

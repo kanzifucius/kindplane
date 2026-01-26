@@ -132,7 +132,7 @@ func (i *Installer) Install(ctx context.Context, spec ChartSpec) error {
 	}
 
 	// Locate chart
-	chartPath, err := installAction.ChartPathOptions.LocateChart(
+	chartPath, err := installAction.LocateChart(
 		fmt.Sprintf("%s/%s", spec.RepoName, spec.ChartName),
 		i.settings,
 	)
@@ -177,7 +177,7 @@ func (i *Installer) Upgrade(ctx context.Context, spec ChartSpec) error {
 	}
 
 	// Locate chart
-	chartPath, err := upgradeAction.ChartPathOptions.LocateChart(
+	chartPath, err := upgradeAction.LocateChart(
 		fmt.Sprintf("%s/%s", spec.RepoName, spec.ChartName),
 		i.settings,
 	)
@@ -326,7 +326,7 @@ func (i *Installer) InstallWithOptions(ctx context.Context, spec ChartSpec, crea
 	}
 
 	// Locate chart
-	chartPath, err := installAction.ChartPathOptions.LocateChart(
+	chartPath, err := installAction.LocateChart(
 		fmt.Sprintf("%s/%s", spec.RepoName, spec.ChartName),
 		i.settings,
 	)
@@ -391,7 +391,7 @@ func (i *Installer) ListReleases(ctx context.Context, namespace string) ([]Relea
 			Chart:      fmt.Sprintf("%s-%s", rel.Chart.Metadata.Name, rel.Chart.Metadata.Version),
 			AppVersion: rel.Chart.Metadata.AppVersion,
 		}
-		if rel.Info.LastDeployed.IsZero() == false {
+		if !rel.Info.LastDeployed.IsZero() {
 			info.Updated = rel.Info.LastDeployed.Time
 		}
 		result = append(result, info)

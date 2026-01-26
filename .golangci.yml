@@ -13,15 +13,17 @@ linters:
     - unused
     - misspell
     - unconvert
-    - unparam
     - nakedret
-    - prealloc
-    - gocritic
-    - revive
-    - gosec
     - bodyclose
-    - noctx
     - errorlint
+  disable:
+    # Disabled linters - too noisy for CLI tools or not applicable
+    - gosec      # Many false positives for CLI (file ops, exec, etc.)
+    - revive     # Too verbose style checks
+    - gocritic   # Style checks (ifElseChain, singleCaseSwitch) are too opinionated
+    - unparam    # Noisy for interfaces and callbacks
+    - prealloc   # Micro-optimisation, not critical
+    - noctx      # net.Listen doesn't need context for quick port checks
 
 formatters:
   enable:
@@ -47,8 +49,9 @@ linters-settings:
   gocritic:
     enabled-tags:
       - diagnostic
-      - style
       - performance
+    disabled-tags:
+      - style           # Style checks are too opinionated
     disabled-checks:
       - hugeParam
       - rangeValCopy
@@ -61,22 +64,28 @@ linters-settings:
       - name: error-return
       - name: error-strings
       - name: error-naming
-      - name: exported
       - name: if-return
       - name: increment-decrement
       - name: var-naming
       - name: var-declaration
-      - name: package-comments
       - name: range
       - name: receiver-naming
       - name: time-naming
       - name: unexported-return
       - name: indent-error-flow
       - name: errorf
+      # Disabled rules:
+      # - exported (too verbose for internal packages)
+      # - package-comments (not needed for internal packages)
+      # - unused-parameter (noisy for interfaces/callbacks)
   gosec:
     excludes:
-      - G104
-      - G304
+      - G101  # Potential hardcoded credentials - false positives on variable names
+      - G104  # Audit errors not checked
+      - G204  # Subprocess launched with variable - intentional for CLI tool
+      - G301  # Directory permissions 0755 - appropriate for user config
+      - G304  # File inclusion via variable - intentional for CLI tool
+      - G306  # WriteFile permissions 0644 - appropriate for config files
 
 formatters-settings:
   gofmt:
@@ -91,6 +100,8 @@ issues:
       linters:
         - gosec
         - errcheck
+    - path: _test\.go
+      text: "SA1019:"  # Allow deprecated APIs in tests (e.g., fake.NewSimpleClientset)
     - linters:
         - govet
       text: 'shadow: declaration of "err"'

@@ -105,7 +105,7 @@ func runList(cmd *cobra.Command, args []string) error {
 			truncate(rel.Name, 20),
 			truncate(rel.Namespace, 20),
 			rel.Revision)
-		statusColor.Printf("%-12s ", rel.Status)
+		_, _ = statusColor.Printf("%-12s ", rel.Status)
 		fmt.Printf("%-30s %s\n",
 			truncate(rel.Chart, 30),
 			updated)

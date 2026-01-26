@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/kind/pkg/cluster"
+	"sigs.k8s.io/kind/pkg/log"
 
 	"github.com/kanzi/kindplane/internal/config"
 )
@@ -33,7 +33,18 @@ func ClusterExists(name string) (bool, error) {
 
 // CreateCluster creates a new Kind cluster based on the configuration
 func CreateCluster(ctx context.Context, cfg *config.Config) error {
-	provider := cluster.NewProvider()
+	return CreateClusterWithProgress(ctx, cfg, nil)
+}
+
+// CreateClusterWithProgress creates a new Kind cluster with progress logging.
+// If logger is provided, it will be used to capture cluster creation progress.
+func CreateClusterWithProgress(ctx context.Context, cfg *config.Config, logger log.Logger) error {
+	// Build provider options
+	providerOpts := []cluster.ProviderOption{}
+	if logger != nil {
+		providerOpts = append(providerOpts, cluster.ProviderWithLogger(logger))
+	}
+	provider := cluster.NewProvider(providerOpts...)
 
 	// Build Kind config
 	kindConfig, err := BuildKindConfig(cfg)
@@ -112,14 +123,6 @@ func GetKubeConfigPath(clusterName string) string {
 // GetContextName returns the kubectl context name for a Kind cluster
 func GetContextName(clusterName string) string {
 	return fmt.Sprintf("kind-%s", clusterName)
-}
-
-// ExportKubeConfig exports the kubeconfig for a Kind cluster
-func ExportKubeConfig(clusterName string) error {
-	cmd := exec.Command("kind", "export", "kubeconfig", "--name", clusterName)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
 }
 
 // GetRESTConfig returns a REST config for the specified Kind cluster

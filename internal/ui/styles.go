@@ -205,23 +205,23 @@ var (
 			Padding(0, 1).
 			Bold(true)
 
-	StyleBadgeSuccess = StyleBadge.Copy().
+	StyleBadgeSuccess = StyleBadge.
 				Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#000000"}).
 				Background(ColorSuccess)
 
-	StyleBadgeError = StyleBadge.Copy().
+	StyleBadgeError = StyleBadge.
 			Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#000000"}).
 			Background(ColorError)
 
-	StyleBadgeWarning = StyleBadge.Copy().
+	StyleBadgeWarning = StyleBadge.
 				Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#000000"}).
 				Background(ColorWarning)
 
-	StyleBadgeInfo = StyleBadge.Copy().
+	StyleBadgeInfo = StyleBadge.
 			Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#000000"}).
 			Background(ColorInfo)
 
-	StyleBadgeMuted = StyleBadge.Copy().
+	StyleBadgeMuted = StyleBadge.
 			Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#000000"}).
 			Background(ColorMuted)
 

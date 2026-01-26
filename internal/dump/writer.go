@@ -127,7 +127,7 @@ func (w *Writer) writeSingleFile(result *DumpResult) error {
 	if err != nil {
 		return fmt.Errorf("creating file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if err := w.writeToWriter(result, f); err != nil {
 		return err
@@ -353,29 +353,29 @@ func sanitizeFilename(name string) string {
 
 // WriteDryRunReport writes a report of what would be dumped
 func WriteDryRunReport(w io.Writer, resources []ResourceInfo) {
-	fmt.Fprintln(w, "Dry run - the following resource types would be dumped:")
-	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "| Type | Category | Namespaced |")
-	fmt.Fprintln(w, "|------|----------|------------|")
+	_, _ = fmt.Fprintln(w, "Dry run - the following resource types would be dumped:")
+	_, _ = fmt.Fprintln(w, "")
+	_, _ = fmt.Fprintln(w, "| Type | Category | Namespaced |")
+	_, _ = fmt.Fprintln(w, "|------|----------|------------|")
 
 	for _, r := range resources {
 		namespaced := "No"
 		if r.Namespaced {
 			namespaced = "Yes"
 		}
-		fmt.Fprintf(w, "| %s | %s | %s |\n", r.DisplayName, r.Category, namespaced)
+		_, _ = fmt.Fprintf(w, "| %s | %s | %s |\n", r.DisplayName, r.Category, namespaced)
 	}
-	fmt.Fprintln(w, "")
+	_, _ = fmt.Fprintln(w, "")
 }
 
 // WriteStats writes dump statistics to a writer
 func WriteStats(w io.Writer, stats DumpStats) {
-	fmt.Fprintln(w, "")
-	fmt.Fprintf(w, "Total resources dumped: %d\n", stats.TotalResources)
+	_, _ = fmt.Fprintln(w, "")
+	_, _ = fmt.Fprintf(w, "Total resources dumped: %d\n", stats.TotalResources)
 	if stats.SkippedResources > 0 {
-		fmt.Fprintf(w, "Resources skipped: %d\n", stats.SkippedResources)
+		_, _ = fmt.Fprintf(w, "Resources skipped: %d\n", stats.SkippedResources)
 	}
 	if stats.NamespacesScanned > 0 {
-		fmt.Fprintf(w, "Namespaces scanned: %d\n", stats.NamespacesScanned)
+		_, _ = fmt.Fprintf(w, "Namespaces scanned: %d\n", stats.NamespacesScanned)
 	}
 }

@@ -15,6 +15,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/term"
+
+	"github.com/kanzi/kindplane/internal/kind"
 )
 
 // ErrCancelled is returned when the user cancels an operation
@@ -712,6 +714,382 @@ func RenderProgressSteps(steps []ProgressStep) string {
 }
 
 // -----------------------------------------------------------------------------
+// Cluster Creation Progress Component
+// -----------------------------------------------------------------------------
+
+// clusterCreateState holds shared state that persists across model copies
+type clusterCreateState struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
+// StepStatus represents the status of a cluster creation step
+type StepStatus int
+
+const (
+	StepStatusPending StepStatus = iota
+	StepStatusRunning
+	StepStatusComplete
+	StepStatusFailed
+)
+
+// ClusterStep represents a step in cluster creation
+type ClusterStep struct {
+	Name   string
+	Status StepStatus
+}
+
+type clusterCreateModel struct {
+	spinner       spinner.Model
+	title         string
+	steps         map[string]*ClusterStep
+	stepOrder     []string // Maintain order of steps as they appear
+	err           error
+	done          bool
+	cancelled     bool
+	fn            func(ctx context.Context, updates chan<- kind.StepUpdate) error
+	state         *clusterCreateState
+	started       bool
+	updates       chan kind.StepUpdate
+	workDone      chan error // Channel to signal work completion with error
+	updatesClosed bool       // Track if updates channel is closed
+}
+
+type stepUpdateMsg struct {
+	update kind.StepUpdate
+}
+
+func (m clusterCreateModel) Init() tea.Cmd {
+	return m.spinner.Tick
+}
+
+func (m clusterCreateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "q":
+			// Cancel the background work
+			if m.state != nil && m.state.cancel != nil {
+				m.state.cancel()
+			}
+			m.done = true
+			m.cancelled = true
+			m.err = ErrCancelled
+			return m, tea.Quit
+		}
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+
+		// Start the background work on first tick
+		if !m.started {
+			m.started = true
+			return m, tea.Batch(cmd, m.startWork(), m.listenForUpdates(), m.checkWorkDone())
+		}
+		// Continue checking for work completion
+		// Note: listenForUpdates() re-arms itself in the stepUpdateMsg handler,
+		// so we only start it once during initial startup to avoid goroutine leaks
+		return m, tea.Batch(cmd, m.checkWorkDone())
+
+	case stepUpdateMsg:
+		// Update step status based on the update
+		update := msg.update
+		stepName := update.Step
+
+		// Add step if it doesn't exist
+		if _, exists := m.steps[stepName]; !exists {
+			m.steps[stepName] = &ClusterStep{
+				Name:   stepName,
+				Status: StepStatusPending,
+			}
+			m.stepOrder = append(m.stepOrder, stepName)
+		}
+
+		step := m.steps[stepName]
+		if update.Done {
+			if update.Success {
+				step.Status = StepStatusComplete
+			} else {
+				step.Status = StepStatusFailed
+				m.err = fmt.Errorf("step failed: %s", stepName)
+				m.done = true
+				return m, tea.Quit
+			}
+		} else {
+			step.Status = StepStatusRunning
+		}
+
+		// Continue listening for updates (if channel still open)
+		if !m.updatesClosed {
+			return m, m.listenForUpdates()
+		}
+		return m, m.checkWorkDone()
+
+	case error:
+		// Check if this is a work completion error or a context error
+		if errors.Is(msg, m.state.ctx.Err()) {
+			// Context cancelled
+			m.err = msg
+			m.done = true
+			m.cancelled = true
+			return m, tea.Quit
+		}
+		// Work completed with error
+		m.err = msg
+		m.done = true
+		return m, tea.Quit
+
+	case updatesClosedMsg:
+		// Updates channel has been closed, stop listening for updates
+		m.updatesClosed = true
+		// Continue checking for work completion
+		return m, m.checkWorkDone()
+
+	case workPendingMsg:
+		// Work is still in progress, continue checking
+		return m, m.checkWorkDone()
+
+	case workCompletedMsg:
+		// Work completed successfully - mark all running steps as complete
+		for _, step := range m.steps {
+			if step.Status == StepStatusRunning {
+				step.Status = StepStatusComplete
+			}
+		}
+		m.done = true
+		return m, tea.Quit
+	}
+
+	return m, nil
+}
+
+func (m clusterCreateModel) startWork() tea.Cmd {
+	return func() tea.Msg {
+		// Run the work function in a goroutine
+		go func() {
+			err := m.fn(m.state.ctx, m.updates)
+			// Close the updates channel to signal no more updates
+			close(m.updates)
+			// Send error (or nil if success) to workDone channel
+			m.workDone <- err
+		}()
+		// Return nil immediately so TUI can continue processing
+		return nil
+	}
+}
+
+func (m clusterCreateModel) checkWorkDone() tea.Cmd {
+	return func() tea.Msg {
+		select {
+		case <-m.state.ctx.Done():
+			return m.state.ctx.Err()
+		case err := <-m.workDone:
+			if err != nil {
+				return err
+			}
+			// Success - mark all running steps as complete
+			// Return a special success message
+			return workCompletedMsg{}
+		default:
+			// No completion yet, return workPendingMsg to continue checking
+			return workPendingMsg{}
+		}
+	}
+}
+
+type workCompletedMsg struct{}
+
+// updatesClosedMsg is returned by listenForUpdates when the updates channel is closed
+type updatesClosedMsg struct{}
+
+// workPendingMsg is returned by checkWorkDone when work is still in progress
+type workPendingMsg struct{}
+
+func (m clusterCreateModel) listenForUpdates() tea.Cmd {
+	return func() tea.Msg {
+		select {
+		case <-m.state.ctx.Done():
+			return m.state.ctx.Err()
+		case update, ok := <-m.updates:
+			if !ok {
+				// Channel closed - return updatesClosedMsg to signal no more updates
+				// Work completion will be handled by checkWorkDone
+				return updatesClosedMsg{}
+			}
+			return stepUpdateMsg{update: update}
+		}
+	}
+}
+
+func (m clusterCreateModel) View() string {
+	if m.done {
+		return ""
+	}
+
+	var sb strings.Builder
+
+	// Title with spinner
+	sb.WriteString(fmt.Sprintf("%s %s\n\n", m.spinner.View(), StyleBold.Render(m.title)))
+
+	// Render steps in order
+	if len(m.stepOrder) == 0 {
+		sb.WriteString(StyleMuted.Render("  Waiting for cluster creation to start..."))
+		return sb.String()
+	}
+
+	for _, stepName := range m.stepOrder {
+		step := m.steps[stepName]
+		var icon string
+		var style lipgloss.Style
+
+		switch step.Status {
+		case StepStatusPending:
+			icon = IconPending
+			style = StyleStepPending
+		case StepStatusRunning:
+			// Show spinner animation for running steps
+			icon = m.spinner.View()
+			style = StyleStepActive
+		case StepStatusComplete:
+			icon = IconSuccess
+			style = StyleStepComplete
+		case StepStatusFailed:
+			icon = IconError
+			style = StyleStepFailed
+		}
+
+		line := "  " + style.Render(icon) + " " + step.Name
+		sb.WriteString(line + "\n")
+	}
+
+	return sb.String()
+}
+
+// RunClusterCreate shows an animated multi-step progress display for cluster creation.
+// The function receives a context and a channel to send step updates.
+// Falls back to static output if not running in a TTY.
+func RunClusterCreate(parentCtx context.Context, clusterName string, fn func(ctx context.Context, updates chan<- kind.StepUpdate) error) error {
+	if !IsTTY() {
+		// Fallback for non-TTY
+		printNonTTYNotice()
+		fmt.Printf("%s Creating Kind cluster '%s'...\n", IconRunning, clusterName)
+
+		updates := make(chan kind.StepUpdate, 10)
+		ctx, cancel := context.WithCancel(parentCtx)
+		defer cancel()
+
+		// Start work in background
+		workDone := make(chan error, 1)
+		go func() {
+			workDone <- fn(ctx, updates)
+			close(updates)
+		}()
+
+		// Process updates
+		steps := make(map[string]bool)
+		for {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case err := <-workDone:
+				if err != nil {
+					return err
+				}
+				// Process any remaining updates
+				for update := range updates {
+					if update.Done {
+						if update.Success {
+							fmt.Printf("  %s %s\n", IconSuccess, update.Step)
+						} else {
+							fmt.Printf("  %s %s\n", IconError, update.Step)
+						}
+					} else {
+						fmt.Printf("  %s %s...\n", IconRunning, update.Step)
+					}
+				}
+				fmt.Printf("%s Kind cluster created\n", IconSuccess)
+				return nil
+			case update, ok := <-updates:
+				if !ok {
+					// Channel closed, set to nil so select blocks on workDone instead of busy-looping
+					updates = nil
+					continue
+				}
+				stepName := update.Step
+				if update.Done {
+					if update.Success {
+						if !steps[stepName] {
+							fmt.Printf("  %s %s\n", IconSuccess, stepName)
+							steps[stepName] = true
+						}
+					} else {
+						fmt.Printf("  %s %s\n", IconError, stepName)
+						return fmt.Errorf("step failed: %s", stepName)
+					}
+				} else {
+					if !steps[stepName] {
+						fmt.Printf("  %s %s...\n", IconRunning, stepName)
+						steps[stepName] = true
+					}
+				}
+			}
+		}
+	}
+
+	// Create a cancellable context - shared via pointer so cancel works
+	ctx, cancel := context.WithCancel(parentCtx)
+	state := &clusterCreateState{ctx: ctx, cancel: cancel}
+
+	updates := make(chan kind.StepUpdate, 10)
+	workDone := make(chan error, 1)
+
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(ColorPrimary)
+
+	m := clusterCreateModel{
+		spinner:   s,
+		title:     fmt.Sprintf("Creating Kind cluster '%s'", clusterName),
+		steps:     make(map[string]*ClusterStep),
+		stepOrder: []string{},
+		fn:        fn,
+		state:     state,
+		updates:   updates,
+		workDone:  workDone,
+	}
+
+	p := tea.NewProgram(m)
+	finalModel, err := p.Run()
+	if err != nil {
+		cancel()
+		return err
+	}
+
+	final := finalModel.(clusterCreateModel)
+	if final.cancelled {
+		fmt.Println(StyleWarning.Render(IconWarning) + " " + m.title + " (cancelled)")
+		return ErrCancelled
+	}
+
+	if final.err != nil {
+		fmt.Println(StyleError.Render(IconError) + " " + m.title)
+		return final.err
+	}
+
+	// Print final success state with all completed steps
+	fmt.Println(StyleSuccess.Render(IconSuccess) + " " + m.title)
+	for _, stepName := range final.stepOrder {
+		step := final.steps[stepName]
+		if step.Status == StepStatusComplete {
+			fmt.Printf("  %s %s\n", StyleSuccess.Render(IconSuccess), step.Name)
+		}
+	}
+
+	return nil
+}
+
+// -----------------------------------------------------------------------------
 // Provider Status Table Component
 // -----------------------------------------------------------------------------
 
@@ -731,7 +1109,6 @@ type providerTableState struct {
 
 type providerTableModel struct {
 	spinner   spinner.Model
-	table     table.Model
 	providers []ProviderInfo
 	title     string
 	err       error

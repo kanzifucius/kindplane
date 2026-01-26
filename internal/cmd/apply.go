@@ -17,12 +17,12 @@ import (
 )
 
 var (
-	applyFile      string
-	applyDirectory string
-	applyRecursive bool
-	applyDryRun    bool
+	applyFile       string
+	applyDirectory  string
+	applyRecursive  bool
+	applyDryRun     bool
 	applyFromConfig bool
-	applyTimeout   time.Duration
+	applyTimeout    time.Duration
 )
 
 var applyCmd = &cobra.Command{

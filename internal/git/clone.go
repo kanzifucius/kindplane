@@ -34,7 +34,7 @@ func CloneRepo(ctx context.Context, repoURL, branch string) (string, error) {
 	_, err = git.PlainCloneContext(ctx, tmpDir, false, opts)
 	if err != nil {
 		// Clean up on error
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 		return "", fmt.Errorf("failed to clone repository: %w", err)
 	}
 
