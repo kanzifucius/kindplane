@@ -26,6 +26,8 @@ It automates the tedious process of setting up a local Kubernetes development en
 - :package: **Provider management** - Install and manage Crossplane providers (AWS, Azure, GCP, etc.)
 - :lock: **External Secrets Operator** - Optional ESO installation for secrets management
 - :bar_chart: **Helm chart support** - Install any Helm chart with configurable phases
+- :whale: **Local container registry** - Built-in registry for faster image development without remote pushes
+- :shield: **Trusted CA certificates** - Configure custom CAs for private registries and workloads
 - :art: **Beautiful CLI** - Rich terminal output with colours, icons, and progress indicators
 - :mag: **Smart diagnostics** - Detailed failure diagnostics with pod logs and conditions
 - :floppy_disk: **GitOps export** - Dump cluster resources in GitOps-friendly format
@@ -50,6 +52,8 @@ kindplane status
 # Delete the cluster
 kindplane down --force
 ```
+
+![kindplane up demo](assets/vhs/up.gif)
 
 ## How It Works
 
