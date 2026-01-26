@@ -123,7 +123,6 @@ func runLogs(cmd *cobra.Command, args []string) error {
 			for _, ns := range []string{"external-secrets", "default", "kube-system"} {
 				pod, err = kubeClient.CoreV1().Pods(ns).Get(ctx, podName, metav1.GetOptions{})
 				if err == nil {
-					namespace = ns
 					break
 				}
 			}
@@ -196,7 +195,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		printError("Failed to stream logs: %v", err)
 		return err
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	// Stream logs to stdout
 	reader := bufio.NewReader(stream)

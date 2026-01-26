@@ -1,3 +1,4 @@
+//nolint:staticcheck // Using fake.NewSimpleClientset which is deprecated but still works
 package registry
 
 import (
@@ -109,7 +110,7 @@ func TestConfigureNodes_KubernetesAPIError(t *testing.T) {
 
 	// Create a fake client that will return an error when listing nodes
 	kubeClient := fake.NewSimpleClientset()
-	
+
 	// Add a reactor that returns an error for node list operations
 	kubeClient.PrependReactor("list", "nodes", func(action ktesting.Action) (handled bool, ret runtime.Object, err error) {
 		return true, nil, apierrors.NewServiceUnavailable("API server unavailable")

@@ -3,7 +3,6 @@ package configcmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -73,20 +72,5 @@ func runShow(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println(string(output))
-	return nil
-}
-
-// showRawConfig displays the raw config file without parsing
-func showRawConfig(configPath string) error {
-	if configPath == "" {
-		configPath = config.DefaultConfigFile
-	}
-
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return fmt.Errorf("failed to read config file: %w", err)
-	}
-
-	fmt.Println(string(data))
 	return nil
 }

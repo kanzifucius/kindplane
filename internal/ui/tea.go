@@ -740,19 +740,19 @@ type ClusterStep struct {
 }
 
 type clusterCreateModel struct {
-	spinner      spinner.Model
-	title        string
-	steps        map[string]*ClusterStep
-	stepOrder    []string // Maintain order of steps as they appear
-	err          error
-	done         bool
-	cancelled    bool
-	fn           func(ctx context.Context, updates chan<- kind.StepUpdate) error
-	state        *clusterCreateState
-	started      bool
-	updates      chan kind.StepUpdate
-	workDone     chan error // Channel to signal work completion with error
-	updatesClosed bool      // Track if updates channel is closed
+	spinner       spinner.Model
+	title         string
+	steps         map[string]*ClusterStep
+	stepOrder     []string // Maintain order of steps as they appear
+	err           error
+	done          bool
+	cancelled     bool
+	fn            func(ctx context.Context, updates chan<- kind.StepUpdate) error
+	state         *clusterCreateState
+	started       bool
+	updates       chan kind.StepUpdate
+	workDone      chan error // Channel to signal work completion with error
+	updatesClosed bool       // Track if updates channel is closed
 }
 
 type stepUpdateMsg struct {
@@ -787,18 +787,16 @@ func (m clusterCreateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.started = true
 			return m, tea.Batch(cmd, m.startWork(), m.listenForUpdates(), m.checkWorkDone())
 		}
-		// Continue checking for work completion and listening for updates (if channel still open)
-		cmds := []tea.Cmd{cmd, m.checkWorkDone()}
-		if !m.updatesClosed {
-			cmds = append(cmds, m.listenForUpdates())
-		}
-		return m, tea.Batch(cmds...)
+		// Continue checking for work completion
+		// Note: listenForUpdates() re-arms itself in the stepUpdateMsg handler,
+		// so we only start it once during initial startup to avoid goroutine leaks
+		return m, tea.Batch(cmd, m.checkWorkDone())
 
 	case stepUpdateMsg:
 		// Update step status based on the update
 		update := msg.update
 		stepName := update.Step
-		
+
 		// Add step if it doesn't exist
 		if _, exists := m.steps[stepName]; !exists {
 			m.steps[stepName] = &ClusterStep{
@@ -842,13 +840,14 @@ func (m clusterCreateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.done = true
 		return m, tea.Quit
 
-	case nil:
-		// Could be updates channel closed or checkWorkDone returned nil (no completion yet)
-		if !m.updatesClosed {
-			// Updates channel closed
-			m.updatesClosed = true
-		}
+	case updatesClosedMsg:
+		// Updates channel has been closed, stop listening for updates
+		m.updatesClosed = true
 		// Continue checking for work completion
+		return m, m.checkWorkDone()
+
+	case workPendingMsg:
+		// Work is still in progress, continue checking
 		return m, m.checkWorkDone()
 
 	case workCompletedMsg:
@@ -893,13 +892,19 @@ func (m clusterCreateModel) checkWorkDone() tea.Cmd {
 			// Return a special success message
 			return workCompletedMsg{}
 		default:
-			// No completion yet, return nil to continue checking
-			return nil
+			// No completion yet, return workPendingMsg to continue checking
+			return workPendingMsg{}
 		}
 	}
 }
 
 type workCompletedMsg struct{}
+
+// updatesClosedMsg is returned by listenForUpdates when the updates channel is closed
+type updatesClosedMsg struct{}
+
+// workPendingMsg is returned by checkWorkDone when work is still in progress
+type workPendingMsg struct{}
 
 func (m clusterCreateModel) listenForUpdates() tea.Cmd {
 	return func() tea.Msg {
@@ -908,9 +913,9 @@ func (m clusterCreateModel) listenForUpdates() tea.Cmd {
 			return m.state.ctx.Err()
 		case update, ok := <-m.updates:
 			if !ok {
-				// Channel closed - return nil to signal no more updates
+				// Channel closed - return updatesClosedMsg to signal no more updates
 				// Work completion will be handled by checkWorkDone
-				return nil
+				return updatesClosedMsg{}
 			}
 			return stepUpdateMsg{update: update}
 		}
@@ -1007,7 +1012,8 @@ func RunClusterCreate(parentCtx context.Context, clusterName string, fn func(ctx
 				return nil
 			case update, ok := <-updates:
 				if !ok {
-					// Channel closed, wait for work to finish
+					// Channel closed, set to nil so select blocks on workDone instead of busy-looping
+					updates = nil
 					continue
 				}
 				stepName := update.Step
@@ -1103,7 +1109,6 @@ type providerTableState struct {
 
 type providerTableModel struct {
 	spinner   spinner.Model
-	table     table.Model
 	providers []ProviderInfo
 	title     string
 	err       error

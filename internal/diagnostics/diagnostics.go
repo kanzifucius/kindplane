@@ -223,9 +223,9 @@ func (r *Report) Print(w io.Writer) {
 	header := styleHeader.Render(" " + ui.IconError + " DIAGNOSTICS ")
 	box := styleBox.Render(content.String())
 
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, header)
-	fmt.Fprintln(w, box)
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, header)
+	_, _ = fmt.Fprintln(w, box)
 }
 
 // renderProviders renders provider diagnostics

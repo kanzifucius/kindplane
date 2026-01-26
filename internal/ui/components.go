@@ -96,7 +96,7 @@ func Box(title, content string) string {
 		Foreground(ColorPrimary).
 		MarginBottom(1)
 
-	box := StyleBox.Copy()
+	box := StyleBox
 	if title != "" {
 		return box.Render(titleStyle.Render(title) + "\n" + content)
 	}
@@ -110,7 +110,7 @@ func SuccessBox(title, content string) string {
 		Foreground(ColorSuccess).
 		MarginBottom(1)
 
-	box := StyleBoxSuccess.Copy()
+	box := StyleBoxSuccess
 	if title != "" {
 		return box.Render(titleStyle.Render(IconSuccess+" "+title) + "\n" + content)
 	}
@@ -124,7 +124,7 @@ func ErrorBox(title, content string) string {
 		Foreground(ColorError).
 		MarginBottom(1)
 
-	box := StyleBoxError.Copy()
+	box := StyleBoxError
 	if title != "" {
 		return box.Render(titleStyle.Render(IconError+" "+title) + "\n" + content)
 	}
@@ -138,7 +138,7 @@ func WarningBox(title, content string) string {
 		Foreground(ColorWarning).
 		MarginBottom(1)
 
-	box := StyleBoxWarning.Copy()
+	box := StyleBoxWarning
 	if title != "" {
 		return box.Render(titleStyle.Render(IconWarning+" "+title) + "\n" + content)
 	}
@@ -152,7 +152,7 @@ func InfoBox(title, content string) string {
 		Foreground(ColorInfo).
 		MarginBottom(1)
 
-	box := StyleBoxInfo.Copy()
+	box := StyleBoxInfo
 	if title != "" {
 		return box.Render(titleStyle.Render(IconInfo+" "+title) + "\n" + content)
 	}

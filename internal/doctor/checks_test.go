@@ -25,11 +25,11 @@ func TestRunAllChecks_WithoutKindCheck(t *testing.T) {
 
 	// Expected checks (without CheckKind):
 	expectedChecks := map[string]bool{
-		"Docker daemon":    false,
-		"kubectl binary":   false,
-		"helm binary":      false,
-		"Disk space":        false,
-		"kind binary":      false, // Should not be present
+		"Docker daemon":  false,
+		"kubectl binary": false,
+		"helm binary":    false,
+		"Disk space":     false,
+		"kind binary":    false, // Should not be present
 	}
 
 	// Mark which checks we found
@@ -39,16 +39,9 @@ func TestRunAllChecks_WithoutKindCheck(t *testing.T) {
 		}
 	}
 
-	// Verify expected checks are present (except kind binary)
-	for name, found := range expectedChecks {
-		if name == "kind binary" {
-			if found {
-				t.Errorf("CheckKind should not be in results, but found: %s", name)
-			}
-		} else {
-			// Other checks may or may not be present depending on system state
-			// We just verify the structure is correct
-		}
+	// Verify CheckKind is not present
+	if found := expectedChecks["kind binary"]; found {
+		t.Errorf("CheckKind should not be in results")
 	}
 }
 

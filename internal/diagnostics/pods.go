@@ -122,9 +122,11 @@ func (c *Collector) collectPodDiagnostic(ctx context.Context, pod *corev1.Pod, d
 		}
 	}
 
-	// Collect container statuses
-	containerStatuses := append(pod.Status.InitContainerStatuses, pod.Status.ContainerStatuses...)
-	for _, cs := range containerStatuses {
+	// Collect container statuses (combine init and regular containers)
+	allContainerStatuses := make([]corev1.ContainerStatus, 0, len(pod.Status.InitContainerStatuses)+len(pod.Status.ContainerStatuses))
+	allContainerStatuses = append(allContainerStatuses, pod.Status.InitContainerStatuses...)
+	allContainerStatuses = append(allContainerStatuses, pod.Status.ContainerStatuses...)
+	for _, cs := range allContainerStatuses {
 		containerDiag := collectContainerDiagnostic(cs)
 
 		// Check if container is ready
@@ -193,7 +195,7 @@ func (c *Collector) getContainerLogs(ctx context.Context, namespace, podName, co
 	if err != nil {
 		return nil, fmt.Errorf("opening log stream: %w", err)
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	var logLines []string
 	scanner := bufio.NewScanner(stream)

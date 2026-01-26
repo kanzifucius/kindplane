@@ -83,7 +83,7 @@ func (i *infoLogger) Info(message string) {
 	if !i.enabled {
 		return
 	}
-	
+
 	// Parse kind's status messages
 	// Kind typically sends messages like:
 	// - " ✓ Ensuring node image (kindest/node:v1.27.1)"
@@ -92,7 +92,7 @@ func (i *infoLogger) Info(message string) {
 	// - " ✓ Writing configuration 📜"
 	// - " • Joining worker nodes  ..."
 	// - " ✓ Joining worker nodes"
-	
+
 	step := parseKindMessage(message)
 	if step == "" {
 		// If parsing failed, try to extract any meaningful step name
@@ -102,21 +102,21 @@ func (i *infoLogger) Info(message string) {
 		if len(trimmed) < 3 {
 			return
 		}
-		
+
 		// Check if this looks like a progress-related message
 		// Look for common progress keywords
 		lower := strings.ToLower(trimmed)
 		isProgressMessage := strings.Contains(lower, "joining") ||
-		   strings.Contains(lower, "waiting") ||
-		   strings.Contains(lower, "starting") ||
-		   strings.Contains(lower, "preparing") ||
-		   strings.Contains(lower, "ensuring") ||
-		   strings.Contains(lower, "writing") ||
-		   strings.Contains(lower, "installing") ||
-		   strings.Contains(lower, "configuring") ||
-		   strings.Contains(lower, "creating") ||
-		   strings.Contains(lower, "setting up")
-		
+			strings.Contains(lower, "waiting") ||
+			strings.Contains(lower, "starting") ||
+			strings.Contains(lower, "preparing") ||
+			strings.Contains(lower, "ensuring") ||
+			strings.Contains(lower, "writing") ||
+			strings.Contains(lower, "installing") ||
+			strings.Contains(lower, "configuring") ||
+			strings.Contains(lower, "creating") ||
+			strings.Contains(lower, "setting up")
+
 		if isProgressMessage {
 			// Clean up the message to use as step name
 			step = trimmed
@@ -135,24 +135,24 @@ func (i *infoLogger) Info(message string) {
 			return
 		}
 	}
-	
+
 	// Check if this is a completion message (starts with ✓ or contains " ✓ ")
 	// Also check for "..." which indicates in-progress
 	trimmedMsg := strings.TrimSpace(message)
-	isDone := strings.HasPrefix(trimmedMsg, "✓") || 
-	         strings.Contains(message, " ✓ ") ||
-	         (strings.HasSuffix(trimmedMsg, "✓") && !strings.Contains(trimmedMsg, "..."))
+	isDone := strings.HasPrefix(trimmedMsg, "✓") ||
+		strings.Contains(message, " ✓ ") ||
+		(strings.HasSuffix(trimmedMsg, "✓") && !strings.Contains(trimmedMsg, "..."))
 	isFailed := strings.HasPrefix(trimmedMsg, "✗") || strings.Contains(message, " ✗ ")
 	isInProgress := strings.Contains(message, "...") || strings.Contains(message, " • ")
 	isSuccess := isDone && !strings.Contains(strings.ToLower(message), "error")
-	
+
 	// Send update - mark as done only if it's a completion message
 	i.logger.updates <- StepUpdate{
 		Step:    step,
 		Done:    (isDone || isFailed) && !isInProgress, // Don't mark as done if it's still in progress
 		Success: isSuccess && !isFailed,
 	}
-	}
+	return
 }
 
 // Infof implements log.InfoLogger
@@ -173,12 +173,12 @@ func (i *infoLogger) Infof(format string, args ...interface{}) {
 func parseKindMessage(message string) string {
 	// Remove leading/trailing whitespace
 	message = strings.TrimSpace(message)
-	
+
 	// Skip empty messages
 	if message == "" {
 		return ""
 	}
-	
+
 	// Remove status indicators (✓, ✗, •, etc.) from the beginning
 	// Handle both " ✓ " and "✓" patterns
 	message = strings.TrimPrefix(message, "✓")
@@ -189,28 +189,28 @@ func parseKindMessage(message string) string {
 	message = strings.ReplaceAll(message, " ✗ ", " ")
 	message = strings.ReplaceAll(message, " • ", " ")
 	message = strings.TrimSpace(message)
-	
+
 	// Remove trailing "..." or " ..."
 	message = strings.TrimSuffix(message, "...")
 	message = strings.TrimSuffix(message, " ...")
 	message = strings.TrimSpace(message)
-	
+
 	// Remove emojis (simple approach - remove common ones)
 	emojis := []string{"📦", "📜", "🕹️", "🔌", "💾", "🚀", "⚙️"}
 	for _, emoji := range emojis {
 		message = strings.ReplaceAll(message, emoji, "")
 	}
 	message = strings.TrimSpace(message)
-	
+
 	// Extract the main step name (before any parenthetical info)
 	if idx := strings.Index(message, "("); idx > 0 {
 		message = strings.TrimSpace(message[:idx])
 	}
-	
+
 	// Skip very short messages that are likely not step names
 	if len(message) < 3 {
 		return ""
 	}
-	
+
 	return message
 }

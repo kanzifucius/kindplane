@@ -1,6 +1,7 @@
 package kind
 
 import (
+	"os"
 	"testing"
 )
 
@@ -22,6 +23,10 @@ func TestExportKubeConfig_Removed(t *testing.T) {
 
 // TestClusterExists tests the ClusterExists function
 func TestClusterExists(t *testing.T) {
+	if _, ok := os.LookupEnv("KIND_E2E"); !ok {
+		t.Skip("skipping Kind E2E tests")
+	}
+
 	// This is a basic test to ensure ClusterExists works
 	// Note: This requires actual Kind clusters or mocking the provider
 	// For now, this is a placeholder test structure
@@ -58,9 +63,9 @@ func TestClusterExists(t *testing.T) {
 // TestGetContextName tests the GetContextName function
 func TestGetContextName(t *testing.T) {
 	testCases := []struct {
-		name         string
-		clusterName  string
-		expectedCtx  string
+		name        string
+		clusterName string
+		expectedCtx string
 	}{
 		{
 			name:        "standard cluster name",

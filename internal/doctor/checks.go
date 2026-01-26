@@ -14,12 +14,12 @@ import (
 
 // CheckResult represents the result of a pre-flight check
 type CheckResult struct {
-	Name        string
-	Passed      bool
-	Message     string
-	Details     string
-	Suggestion  string
-	Required    bool
+	Name       string
+	Passed     bool
+	Message    string
+	Details    string
+	Suggestion string
+	Required   bool
 }
 
 // Check is a function that performs a pre-flight check
@@ -169,7 +169,7 @@ func CheckPort(port int) Check {
 			result.Suggestion = fmt.Sprintf("Run: %s lsof -i :%d", getSudoCommand(), port)
 			return result
 		}
-		listener.Close()
+		_ = listener.Close()
 
 		result.Passed = true
 		result.Message = "Available"

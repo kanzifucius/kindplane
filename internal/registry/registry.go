@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/kanzi/kindplane/internal/config"
 	"github.com/kanzi/kindplane/internal/kind"
@@ -136,14 +139,38 @@ func (m *Manager) ConfigureNodes(ctx context.Context, clusterName string) error 
 		return fmt.Errorf("failed to get kubernetes client: %w", err)
 	}
 
-	// List nodes using Kubernetes API
-	nodesList, err := kubeClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to list cluster nodes: %w", err)
+	// List nodes using Kubernetes API with retry/backoff
+	// The API server may still be bootstrapping, so we retry until nodes are available
+	var nodesList *corev1.NodeList
+	var lastErr error
+
+	backoff := wait.Backoff{
+		Duration: 500 * time.Millisecond,
+		Factor:   1.5,
+		Jitter:   0.1,
+		Steps:    10,
+		Cap:      10 * time.Second,
 	}
 
-	if len(nodesList.Items) == 0 {
-		return fmt.Errorf("no nodes found in cluster %s", clusterName)
+	err = wait.ExponentialBackoffWithContext(ctx, backoff, func(ctx context.Context) (bool, error) {
+		nodesList, lastErr = kubeClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+		if lastErr != nil {
+			// Retry on API errors (server may be bootstrapping)
+			return false, nil
+		}
+		if len(nodesList.Items) == 0 {
+			// Retry if no nodes found yet
+			return false, nil
+		}
+		// Success: nodes found
+		return true, nil
+	})
+
+	if err != nil {
+		if lastErr != nil {
+			return fmt.Errorf("node discovery timed out for cluster %s: %w", clusterName, lastErr)
+		}
+		return fmt.Errorf("node discovery timed out for cluster %s: no nodes found after retries", clusterName)
 	}
 
 	registryDir := fmt.Sprintf("/etc/containerd/certs.d/localhost:%d", port)
