@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/template"
 
 	"gopkg.in/yaml.v3"
@@ -101,9 +102,38 @@ func loadRawKindConfig(path string) (*KindConfig, error) {
 	return &config, nil
 }
 
+// GetNodeImage determines the node image that will be used for cluster creation
+// Returns the image path and a description of how it was determined
+func GetNodeImage(cfg *config.Config) (image string, source string) {
+	// Trim whitespace to handle any YAML parsing issues
+	nodeImage := strings.TrimSpace(cfg.Cluster.NodeImage)
+	if nodeImage != "" {
+		return nodeImage, "explicitly configured"
+	}
+	if cfg.Cluster.KubernetesVersion != "" {
+		image = fmt.Sprintf("kindest/node:v%s", strings.TrimPrefix(cfg.Cluster.KubernetesVersion, "v"))
+		return image, fmt.Sprintf("derived from kubernetesVersion (%s)", cfg.Cluster.KubernetesVersion)
+	}
+	return "", "Kind default (not specified)"
+}
+
 // buildNodes creates the node list based on config
 func buildNodes(cfg *config.Config, existingNodes []KindNode) []KindNode {
 	nodes := []KindNode{}
+
+	// Determine node image - prioritize explicit nodeImage from config
+	// This must be set to ensure the user's nodeImage setting is always respected
+	var nodeImage string
+	if cfg.Cluster.NodeImage != "" {
+		// Use explicit nodeImage from config (highest priority)
+		// Trim whitespace to handle any YAML parsing issues
+		nodeImage = strings.TrimSpace(cfg.Cluster.NodeImage)
+	} else if cfg.Cluster.KubernetesVersion != "" {
+		// Fall back to constructing from kubernetesVersion if nodeImage not specified
+		nodeImage = fmt.Sprintf("kindest/node:v%s", strings.TrimPrefix(cfg.Cluster.KubernetesVersion, "v"))
+	}
+	// If nodeImage is still empty here, it means neither NodeImage nor KubernetesVersion
+	// were set, and Kind will use its default image (Image field will be omitted due to omitempty)
 
 	// Port mappings for control plane (used for ingress)
 	var controlPlanePortMappings []KindPortMapping
@@ -136,6 +166,7 @@ func buildNodes(cfg *config.Config, existingNodes []KindNode) []KindNode {
 	for i := 0; i < cfg.Cluster.Nodes.ControlPlane; i++ {
 		node := KindNode{
 			Role:        "control-plane",
+			Image:       nodeImage,
 			ExtraMounts: extraMounts,
 		}
 
@@ -171,6 +202,7 @@ func buildNodes(cfg *config.Config, existingNodes []KindNode) []KindNode {
 	for i := 0; i < cfg.Cluster.Nodes.Workers; i++ {
 		node := KindNode{
 			Role:        "worker",
+			Image:       nodeImage,
 			ExtraMounts: extraMounts,
 			// Add kindplane marker label via kubeadm patch
 			KubeadmConfigPatches: []string{
@@ -293,3 +325,53 @@ func GenerateKindConfigFile(cfg *config.Config, outputPath string) error {
 // Note: kindConfigTemplate is not currently used since we use YAML marshaling directly
 // It's kept here for reference in case template-based generation is needed in the future
 var _ = template.New("kindConfig") // Satisfy the import
+
+// TrustedCAsSummary contains the result of CA validation
+type TrustedCAsSummary struct {
+	RegistryCount int
+	WorkloadCount int
+}
+
+// HasTrustedCAs returns true if any trusted CAs are configured
+func HasTrustedCAs(cfg *config.Config) bool {
+	return len(cfg.Cluster.TrustedCAs.Registries) > 0 ||
+		len(cfg.Cluster.TrustedCAs.Workloads) > 0
+}
+
+// ValidateTrustedCAs validates that all configured CA files exist and are readable
+// Returns a summary of the configured CAs or an error if validation fails
+func ValidateTrustedCAs(cfg *config.Config) (*TrustedCAsSummary, error) {
+	summary := &TrustedCAsSummary{}
+
+	// Validate registry CAs
+	for _, reg := range cfg.Cluster.TrustedCAs.Registries {
+		absPath, err := filepath.Abs(reg.CAFile)
+		if err != nil {
+			return nil, fmt.Errorf("invalid path for registry CA '%s': %w", reg.Host, err)
+		}
+		if _, err := os.Stat(absPath); err != nil {
+			if os.IsNotExist(err) {
+				return nil, fmt.Errorf("registry CA file not found for '%s': %s", reg.Host, absPath)
+			}
+			return nil, fmt.Errorf("cannot access registry CA file for '%s': %w", reg.Host, err)
+		}
+		summary.RegistryCount++
+	}
+
+	// Validate workload CAs
+	for _, wl := range cfg.Cluster.TrustedCAs.Workloads {
+		absPath, err := filepath.Abs(wl.CAFile)
+		if err != nil {
+			return nil, fmt.Errorf("invalid path for workload CA '%s': %w", wl.Name, err)
+		}
+		if _, err := os.Stat(absPath); err != nil {
+			if os.IsNotExist(err) {
+				return nil, fmt.Errorf("workload CA file not found for '%s': %s", wl.Name, absPath)
+			}
+			return nil, fmt.Errorf("cannot access workload CA file for '%s': %w", wl.Name, err)
+		}
+		summary.WorkloadCount++
+	}
+
+	return summary, nil
+}

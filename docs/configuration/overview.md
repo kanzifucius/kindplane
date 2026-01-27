@@ -24,8 +24,7 @@ The configuration file has the following top-level sections:
 cluster:      # Kind cluster configuration
 crossplane:   # Crossplane installation settings
 credentials:  # Cloud provider credentials
-eso:          # External Secrets Operator settings
-charts:       # Helm charts to install
+charts:       # Helm charts to install (including ESO if needed)
 compositions: # Crossplane compositions to apply
 ```
 
@@ -130,11 +129,16 @@ credentials:
   kubernetes:
     source: incluster
 
-eso:
-  enabled: true
-  version: "0.9.11"
-
 charts:
+  # Example: Install External Secrets Operator
+  - name: external-secrets
+    repo: https://charts.external-secrets.io
+    chart: external-secrets
+    version: "0.9.11"
+    namespace: external-secrets
+    phase: post-providers
+    values:
+      installCRDs: true
   - name: cert-manager
     repo: https://charts.jetstack.io
     chart: cert-manager
@@ -157,6 +161,8 @@ compositions:
 | [cluster.trustedCAs](trusted-cas.md) | Trusted CA certificates | No |
 | [crossplane](crossplane.md) | Crossplane installation | Yes |
 | [credentials](credentials.md) | Cloud provider credentials | No |
-| [eso](eso.md) | External Secrets Operator | No |
 | [charts](charts.md) | Helm charts to install | No |
 | [compositions](compositions.md) | Crossplane compositions | No |
+
+!!! note "External Secrets Operator"
+    ESO can be installed via the `charts` section. See the [ESO installation guide](eso.md) for details.

@@ -168,6 +168,60 @@ cluster:
 !!! tip "Learn More"
     See [Trusted CAs](trusted-cas.md) for detailed documentation on certificate configuration.
 
+### nodeImage
+
+Specify the full Kind node image path. Use this when your environment requires pulling images through a proxy registry like Artifactory due to network restrictions.
+
+```yaml
+cluster:
+  nodeImage: "artifactory.example.com/kindest/node:v1.29.0"
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `nodeImage` | string | No | Full Kind node image path. If not specified, defaults to `kindest/node:v<kubernetesVersion>` |
+
+**Default Behaviour:**
+- If `nodeImage` is not specified and `kubernetesVersion` is set, Kind will use `kindest/node:v<version>`
+- If `nodeImage` is specified, it takes precedence over the default
+
+**Examples:**
+
+Simple proxy registry:
+```yaml
+cluster:
+  nodeImage: "artifactory.example.com/kindest/node:v1.29.0"
+```
+
+Docker Hub proxy with path:
+```yaml
+cluster:
+  nodeImage: "artifactory.example.com/docker.io/kindest/node:v1.29.0"
+```
+
+Custom registry with port:
+```yaml
+cluster:
+  nodeImage: "registry.example.com:5000/kindest/node:v1.29.0"
+```
+
+**Important Notes:**
+
+1. **Certificate Configuration**: If your proxy registry uses custom certificates, ensure it's configured in `trustedCAs.registries`:
+
+```yaml
+cluster:
+  nodeImage: "artifactory.example.com/kindest/node:v1.29.0"
+  trustedCAs:
+    registries:
+      - host: "artifactory.example.com"
+        caFile: "./certs/artifactory-ca.crt"
+```
+
+2. **Image Availability**: Ensure the proxy registry has the required Kind node images available, or that it can proxy requests to Docker Hub.
+
+3. **Version Mismatch**: If you specify `nodeImage` manually, ensure the image version matches your `kubernetesVersion` (if specified) or your intended Kubernetes version.
+
 ### rawConfigPath
 
 Use a raw Kind configuration file as a base.

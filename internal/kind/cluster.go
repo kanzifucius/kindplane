@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -52,15 +51,9 @@ func CreateClusterWithProgress(ctx context.Context, cfg *config.Config, logger l
 		return fmt.Errorf("failed to build kind config: %w", err)
 	}
 
-	// Create cluster with config
+	// Create cluster with config (node image is embedded in the config)
 	opts := []cluster.CreateOption{
 		cluster.CreateWithRawConfig([]byte(kindConfig)),
-	}
-
-	// Add node image if kubernetes version is specified
-	if cfg.Cluster.KubernetesVersion != "" {
-		nodeImage := fmt.Sprintf("kindest/node:v%s", strings.TrimPrefix(cfg.Cluster.KubernetesVersion, "v"))
-		opts = append(opts, cluster.CreateWithNodeImage(nodeImage))
 	}
 
 	if err := provider.Create(cfg.Cluster.Name, opts...); err != nil {

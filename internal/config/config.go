@@ -18,7 +18,6 @@ type Config struct {
 	Cluster      ClusterConfig      `yaml:"cluster"`
 	Crossplane   CrossplaneConfig   `yaml:"crossplane"`
 	Credentials  CredentialsConfig  `yaml:"credentials"`
-	ESO          ESOConfig          `yaml:"eso"`
 	Charts       []ChartConfig      `yaml:"charts,omitempty"`
 	Compositions CompositionsConfig `yaml:"compositions"`
 }
@@ -34,6 +33,7 @@ type ClusterConfig struct {
 	Registry          RegistryConfig   `yaml:"registry,omitempty"`
 	TrustedCAs        TrustedCAsConfig `yaml:"trustedCAs,omitempty"`
 	RawConfigPath     string           `yaml:"rawConfigPath,omitempty"`
+	NodeImage         string           `yaml:"nodeImage,omitempty"` // Full Kind node image path (e.g., "artifactory.example.com/kindest/node:v1.29.0"). If not specified, defaults to "kindest/node:v<version>"
 }
 
 // RegistryConfig contains local container registry configuration
@@ -103,10 +103,51 @@ type WorkloadCA struct {
 	CAFile string `yaml:"caFile"` // Path to CA certificate file on the host
 }
 
+// RegistryCaBundleConfig configures CA bundle for Crossplane registry access
+// Multiple certificates can be specified and will be bundled together
+type RegistryCaBundleConfig struct {
+	CAFiles        []string `yaml:"caFiles,omitempty"`        // Direct paths to CA files
+	WorkloadCARefs []string `yaml:"workloadCARefs,omitempty"` // References to workload CAs by name
+}
+
+// ResolveCAFiles resolves all CA file paths from both direct paths and workload CA references
+// Returns a list of CA file paths and an error if any reference is not found
+func (r *RegistryCaBundleConfig) ResolveCAFiles(workloadCAs []WorkloadCA) ([]string, error) {
+	var caFiles []string
+
+	// Add direct CA files
+	caFiles = append(caFiles, r.CAFiles...)
+
+	// Resolve workload CA references
+	for _, ref := range r.WorkloadCARefs {
+		found := false
+		for _, wl := range workloadCAs {
+			if wl.Name == ref {
+				caFiles = append(caFiles, wl.CAFile)
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("workload CA '%s' not found", ref)
+		}
+	}
+
+	if len(caFiles) == 0 {
+		return nil, fmt.Errorf("no CA files specified (use caFiles or workloadCARefs)")
+	}
+
+	return caFiles, nil
+}
+
 // CrossplaneConfig contains Crossplane installation settings
 type CrossplaneConfig struct {
-	Version   string           `yaml:"version"`
-	Providers []ProviderConfig `yaml:"providers,omitempty"`
+	Version          string                  `yaml:"version"`
+	Repo             string                  `yaml:"repo,omitempty"`        // Custom Helm repository URL (defaults to https://charts.crossplane.io/stable)
+	Values           map[string]interface{}  `yaml:"values,omitempty"`      // Inline Helm values
+	ValuesFiles      []string                `yaml:"valuesFiles,omitempty"` // Paths to external values files
+	Providers        []ProviderConfig        `yaml:"providers,omitempty"`
+	RegistryCaBundle *RegistryCaBundleConfig `yaml:"registryCaBundle,omitempty"` // CA bundle for Crossplane registry access
 }
 
 // ProviderConfig defines a Crossplane provider
@@ -136,12 +177,6 @@ type AzureCredentials struct {
 // KubernetesCredentials defines Kubernetes credential source
 type KubernetesCredentials struct {
 	Source string `yaml:"source"` // incluster, kubeconfig
-}
-
-// ESOConfig contains External Secrets Operator configuration
-type ESOConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	Version string `yaml:"version"`
 }
 
 // CompositionsConfig contains composition sources configuration
@@ -177,13 +212,18 @@ const (
 	ChartPhasePrecrossplane  = "pre-crossplane"
 	ChartPhasePostCrossplane = "post-crossplane"
 	ChartPhasePostProviders  = "post-providers"
-	ChartPhasePostESO        = "post-eso"
+	ChartPhaseFinal          = "final"    // Preferred name for final installation phase
+	ChartPhasePostESO        = "post-eso" // Deprecated: kept for backwards compatibility, use "final" instead
 )
 
-// GetPhase returns the chart phase, defaulting to post-eso
+// GetPhase returns the chart phase, defaulting to final
 func (c *ChartConfig) GetPhase() string {
 	if c.Phase == "" {
-		return ChartPhasePostESO
+		return ChartPhaseFinal
+	}
+	// Map deprecated post-eso to final for backwards compatibility
+	if c.Phase == ChartPhasePostESO {
+		return ChartPhaseFinal
 	}
 	return c.Phase
 }

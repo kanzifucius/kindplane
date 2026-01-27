@@ -6,12 +6,12 @@ import (
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
 	"github.com/kanzi/kindplane/internal/config"
 	"github.com/kanzi/kindplane/internal/helm"
 	"github.com/kanzi/kindplane/internal/kind"
+	"github.com/kanzi/kindplane/internal/ui"
 )
 
 var (
@@ -47,7 +47,7 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 	// Load config to get cluster name
 	cfg, err := config.Load("")
 	if err != nil {
-		color.Red("✗ %v", err)
+		fmt.Println(ui.Error("%v", err))
 		return err
 	}
 
@@ -57,18 +57,18 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 	// Check cluster exists
 	exists, err := kind.ClusterExists(cfg.Cluster.Name)
 	if err != nil {
-		color.Red("✗ Failed to check cluster: %v", err)
+		fmt.Println(ui.Error("Failed to check cluster: %v", err))
 		return err
 	}
 	if !exists {
-		color.Red("✗ Cluster '%s' not found. Run 'kindplane up' first.", cfg.Cluster.Name)
+		fmt.Println(ui.Error("Cluster '%s' not found. Run 'kindplane up' first.", cfg.Cluster.Name))
 		return fmt.Errorf("cluster not found")
 	}
 
 	// Get kube client
 	kubeClient, err := kind.GetKubeClient(cfg.Cluster.Name)
 	if err != nil {
-		color.Red("✗ Failed to connect to cluster: %v", err)
+		fmt.Println(ui.Error("Failed to connect to cluster: %v", err))
 		return err
 	}
 
@@ -77,11 +77,11 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 	// Check if release exists
 	installed, err := helmInstaller.IsInstalled(ctx, releaseName, uninstallNamespace)
 	if err != nil {
-		color.Red("✗ Failed to check release: %v", err)
+		fmt.Println(ui.Error("Failed to check release: %v", err))
 		return err
 	}
 	if !installed {
-		color.Yellow("! Release '%s' not found in namespace '%s'", releaseName, uninstallNamespace)
+		fmt.Println(ui.Warning("Release '%s' not found in namespace '%s'", releaseName, uninstallNamespace))
 		return nil
 	}
 
@@ -92,22 +92,22 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 			Message: fmt.Sprintf("Uninstall release '%s' from namespace '%s'?", releaseName, uninstallNamespace),
 		}
 		if err := survey.AskOne(prompt, &confirm); err != nil {
-			color.Red("✗ Prompt failed: %v", err)
+			fmt.Println(ui.Error("Prompt failed: %v", err))
 			return err
 		}
 		if !confirm {
-			color.Yellow("! Uninstall cancelled")
+			fmt.Println(ui.Warning("Uninstall cancelled"))
 			return nil
 		}
 	}
 
 	// Uninstall
-	color.Cyan("• Uninstalling release %s from namespace %s...", releaseName, uninstallNamespace)
+	fmt.Println(ui.Info("Uninstalling release %s from namespace %s...", releaseName, uninstallNamespace))
 	if err := helmInstaller.UninstallRelease(ctx, releaseName, uninstallNamespace); err != nil {
-		color.Red("✗ Failed to uninstall release: %v", err)
+		fmt.Println(ui.Error("Failed to uninstall release: %v", err))
 		return err
 	}
 
-	color.Green("✓ Release %s uninstalled", releaseName)
+	fmt.Println(ui.Success("Release %s uninstalled", releaseName))
 	return nil
 }

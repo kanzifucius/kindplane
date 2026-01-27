@@ -47,10 +47,6 @@ func DefaultConfig() *Config {
 				Source: "incluster",
 			},
 		},
-		ESO: ESOConfig{
-			Enabled: true,
-			Version: "0.9.11",
-		},
 		Charts: []ChartConfig{},
 		Compositions: CompositionsConfig{
 			Sources: []CompositionSource{},
@@ -70,6 +66,15 @@ cluster:
   
   # Kubernetes version to use (optional, uses Kind default if not specified)
   kubernetesVersion: "1.29.0"
+  
+  # Full Kind node image path (optional)
+  # Use when pulling images through a proxy registry like Artifactory
+  # If not specified, defaults to "kindest/node:v<kubernetesVersion>"
+  # Examples:
+  #   - "artifactory.example.com/kindest/node:v1.29.0"
+  #   - "artifactory.example.com/docker.io/kindest/node:v1.29.0"
+  # Note: Ensure the proxy registry is configured in trustedCAs if using custom certificates
+  # nodeImage: ""
   
   # Node configuration
   nodes:
@@ -118,6 +123,37 @@ crossplane:
   # Crossplane version to install
   version: "1.15.0"
   
+  # Custom Helm repository URL (optional)
+  # Use when pulling charts from a private registry or air-gapped environment
+  # If not specified, defaults to https://charts.crossplane.io/stable
+  # repo: "https://charts.crossplane.io/stable"
+  
+  # Inline Helm values for Crossplane installation (optional)
+  # These values will be merged with any values files specified below
+  # values:
+  #   resourcesCrossplane:
+  #     limits:
+  #       memory: 512Mi
+  #   args:
+  #     - --enable-composition-functions
+  
+  # External values files (optional)
+  # Values from files are loaded first, then inline values override them
+  # valuesFiles:
+  #   - ./values/crossplane-values.yaml
+  
+  # Registry CA bundle for Crossplane (optional)
+  # Required when pulling Configuration and Provider packages from private registries with custom certificates
+  # Multiple certificates can be specified and will be bundled together into one ConfigMap
+  # registryCaBundle:
+  #   # Direct paths to CA files (multiple allowed)
+  #   caFiles:
+  #     - "./certs/corporate-root-ca.crt"
+  #     - "./certs/proxy-ca.crt"
+  #   # Reference existing workload CAs by name (must be defined in cluster.trustedCAs.workloads)
+  #   workloadCARefs:
+  #     - "corporate-root-ca"
+  
   # Crossplane providers to install
   # Use full OCI package path with version tag
   providers:
@@ -147,21 +183,26 @@ credentials:
   #   # Source: env (environment variables), file (credentials file)
   #   source: env
 
-# External Secrets Operator configuration
-eso:
-  enabled: true
-  version: "0.9.11"
-
 # Additional Helm charts to install
-# Phases: pre-crossplane, post-crossplane, post-providers, post-eso (default)
+# Phases: pre-crossplane, post-crossplane, post-providers, final (default), post-eso (deprecated)
 charts: []
+  # Example: Install External Secrets Operator
+  # - name: external-secrets
+  #   repo: https://charts.external-secrets.io
+  #   chart: external-secrets
+  #   version: "0.9.11"
+  #   namespace: external-secrets
+  #   phase: post-providers
+  #   values:
+  #     installCRDs: true
+  #
   # Example: Install nginx ingress controller
   # - name: nginx-ingress
   #   repo: https://kubernetes.github.io/ingress-nginx
   #   chart: ingress-nginx
   #   version: "4.9.0"
   #   namespace: ingress-nginx
-  #   phase: post-eso
+  #   phase: final
   #   wait: true
   #   timeout: 5m
   #   values:

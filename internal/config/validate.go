@@ -115,6 +115,47 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	// Validate Crossplane values files exist
+	for i, vf := range c.Crossplane.ValuesFiles {
+		if _, err := os.Stat(vf); os.IsNotExist(err) {
+			errs = append(errs, fmt.Sprintf("crossplane.valuesFiles[%d] file not found: %s", i, vf))
+		}
+	}
+
+	// Validate registryCaBundle config
+	if c.Crossplane.RegistryCaBundle != nil {
+		rcb := c.Crossplane.RegistryCaBundle
+		// Must specify at least one CA file or workload CA reference
+		if len(rcb.CAFiles) == 0 && len(rcb.WorkloadCARefs) == 0 {
+			errs = append(errs, "crossplane.registryCaBundle: must specify at least one caFiles entry or workloadCARefs entry")
+		}
+
+		// Validate all CA files exist
+		for i, caFile := range rcb.CAFiles {
+			if _, err := os.Stat(caFile); err != nil {
+				if os.IsNotExist(err) {
+					errs = append(errs, fmt.Sprintf("crossplane.registryCaBundle.caFiles[%d] not found: %s", i, caFile))
+				} else {
+					errs = append(errs, fmt.Sprintf("crossplane.registryCaBundle.caFiles[%d] cannot be accessed: %s (%v)", i, caFile, err))
+				}
+			}
+		}
+
+		// Validate all workload CA references exist
+		for i, ref := range rcb.WorkloadCARefs {
+			found := false
+			for _, wl := range c.Cluster.TrustedCAs.Workloads {
+				if wl.Name == ref {
+					found = true
+					break
+				}
+			}
+			if !found {
+				errs = append(errs, fmt.Sprintf("crossplane.registryCaBundle.workloadCARefs[%d] '%s' does not match any workload CA in cluster.trustedCAs.workloads", i, ref))
+			}
+		}
+	}
+
 	// Validate credentials config
 	validCredSources := map[string]bool{"env": true, "file": true, "profile": true, "": true}
 	if !validCredSources[c.Credentials.AWS.Source] {
@@ -129,18 +170,14 @@ func (c *Config) Validate() error {
 		errs = append(errs, fmt.Sprintf("credentials.kubernetes.source must be one of: incluster, kubeconfig (got: %s)", c.Credentials.Kubernetes.Source))
 	}
 
-	// Validate ESO config
-	if c.ESO.Enabled && c.ESO.Version == "" {
-		errs = append(errs, "eso.version is required when eso.enabled is true")
-	}
-
 	// Validate charts config
 	validPhases := map[string]bool{
 		ChartPhasePrecrossplane:  true,
 		ChartPhasePostCrossplane: true,
 		ChartPhasePostProviders:  true,
-		ChartPhasePostESO:        true,
-		"":                       true, // Empty defaults to post-eso
+		ChartPhaseFinal:          true,
+		ChartPhasePostESO:        true, // Deprecated but kept for backwards compatibility
+		"":                       true, // Empty defaults to final
 	}
 	chartNames := make(map[string]bool)
 	for i, chart := range c.Charts {
@@ -163,7 +200,7 @@ func (c *Config) Validate() error {
 			errs = append(errs, fmt.Sprintf("charts[%d].namespace is required", i))
 		}
 		if !validPhases[chart.Phase] {
-			errs = append(errs, fmt.Sprintf("charts[%d].phase must be one of: pre-crossplane, post-crossplane, post-providers, post-eso (got: %s)", i, chart.Phase))
+			errs = append(errs, fmt.Sprintf("charts[%d].phase must be one of: pre-crossplane, post-crossplane, post-providers, final, post-eso (got: %s)", i, chart.Phase))
 		}
 		// Validate timeout is a valid duration
 		if chart.Timeout != "" {

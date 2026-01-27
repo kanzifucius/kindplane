@@ -117,9 +117,6 @@ func runDiagnostics(cmd *cobra.Command, args []string) error {
 			diagnostics.ComponentCrossplane,
 			diagnostics.ComponentProviders,
 		}
-		if cfg.ESO.Enabled {
-			components = append(components, diagnostics.ComponentESO)
-		}
 	}
 
 	// Print header

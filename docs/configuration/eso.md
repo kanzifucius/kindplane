@@ -1,51 +1,85 @@
-# External Secrets Operator
+# Installing External Secrets Operator
 
-kindplane can install [External Secrets Operator](https://external-secrets.io/) (ESO) for managing secrets from external secret stores.
+External Secrets Operator (ESO) can be installed via the `charts` section, which provides more flexibility than the previous dedicated installer.
 
-## Configuration
+## Installation via Charts
 
 ```yaml
-eso:
-  enabled: true
-  version: "0.9.11"
+charts:
+  - name: external-secrets
+    repo: https://charts.external-secrets.io
+    chart: external-secrets
+    version: "0.9.11"
+    namespace: external-secrets
+    phase: post-providers
+    values:
+      installCRDs: true
 ```
 
 ## Options
 
-### enabled
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Helm release name (typically `external-secrets`) |
+| `repo` | string | Yes | Helm repository URL |
+| `chart` | string | Yes | Chart name (`external-secrets`) |
+| `version` | string | No | Chart version (uses latest if omitted) |
+| `namespace` | string | Yes | Target namespace (`external-secrets`) |
+| `phase` | string | No | Installation phase (default: `final`) |
+| `values` | object | No | Inline Helm values |
+| `valuesFiles` | array | No | Paths to external values files |
 
-Enable or disable ESO installation.
+## Installation Phase
 
-```yaml
-eso:
-  enabled: true
-```
-
-- **Type:** boolean
-- **Default:** `false`
-- **Required:** No
-
-### version
-
-The ESO Helm chart version to install.
+Set `phase: post-providers` to install ESO after Crossplane providers are ready, matching the previous behaviour.
 
 ```yaml
-eso:
-  version: "0.9.11"
+charts:
+  - name: external-secrets
+    repo: https://charts.external-secrets.io
+    chart: external-secrets
+    namespace: external-secrets
+    phase: post-providers
+    values:
+      installCRDs: true
 ```
 
-- **Type:** string
-- **Required:** Yes (if enabled)
+## Custom Values
 
-!!! tip "Version Selection"
-    Check the [ESO releases](https://github.com/external-secrets/external-secrets/releases) for available versions.
+Customise the ESO installation with Helm values:
 
-## Skipping ESO During Bootstrap
+```yaml
+charts:
+  - name: external-secrets
+    repo: https://charts.external-secrets.io
+    chart: external-secrets
+    namespace: external-secrets
+    phase: post-providers
+    values:
+      installCRDs: true
+      replicaCount: 2
+      resources:
+        limits:
+          memory: 512Mi
+          cpu: 500m
+```
 
-If ESO is enabled in configuration but you want to skip it temporarily:
+## Using External Values Files
 
-```bash
-kindplane up --skip-eso
+For complex configurations, use external values files:
+
+```yaml
+charts:
+  - name: external-secrets
+    repo: https://charts.external-secrets.io
+    chart: external-secrets
+    namespace: external-secrets
+    phase: post-providers
+    valuesFiles:
+      - ./values/eso-base.yaml
+      - ./values/eso-overrides.yaml
+    values:
+      installCRDs: true
 ```
 
 ## What ESO Provides
@@ -141,14 +175,43 @@ crossplane:
     - name: provider-aws
       package: xpkg.upbound.io/upbound/provider-aws:v1.1.0
 
-eso:
-  enabled: true
-  version: "0.9.11"
-
 charts:
+  - name: external-secrets
+    repo: https://charts.external-secrets.io
+    chart: external-secrets
+    version: "0.9.11"
+    namespace: external-secrets
+    phase: post-providers
+    values:
+      installCRDs: true
+  
   - name: my-app
     repo: https://charts.example.com
     chart: my-app
     namespace: default
-    phase: post-eso  # Install after ESO is ready
+    phase: final  # Install after ESO is ready
+```
+
+## Migration from Previous Configuration
+
+If you previously used the `eso` section:
+
+**Before:**
+```yaml
+eso:
+  enabled: true
+  version: "0.9.11"
+```
+
+**After:**
+```yaml
+charts:
+  - name: external-secrets
+    repo: https://charts.external-secrets.io
+    chart: external-secrets
+    version: "0.9.11"
+    namespace: external-secrets
+    phase: post-providers
+    values:
+      installCRDs: true
 ```

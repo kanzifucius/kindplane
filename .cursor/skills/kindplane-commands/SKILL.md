@@ -251,16 +251,13 @@ if !forceFlag {
 }
 ```
 
-### Spinners and Progress
+### Interactive TUI Components
+
+For spinners, progress bars, multi-step operations, and live tables, see the **tui-components** skill.
 
 ```go
 // Simple spinner
 err := ui.RunSpinner("Installing component", func() error {
-    return doInstall(ctx)
-})
-
-// With context cancellation support
-err := ui.RunSpinnerWithContext(ctx, "Installing", func(ctx context.Context) error {
     return doInstall(ctx)
 })
 
@@ -269,6 +266,8 @@ err := ui.RunProgress("Processing items", items, func(item string) error {
     return processItem(item)
 })
 ```
+
+See `tui-components` skill for all components, options, and creating new ones.
 
 ## Flag Conventions
 

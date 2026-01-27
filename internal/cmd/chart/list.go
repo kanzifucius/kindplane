@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
 	"github.com/kanzi/kindplane/internal/config"
 	"github.com/kanzi/kindplane/internal/helm"
 	"github.com/kanzi/kindplane/internal/kind"
+	"github.com/kanzi/kindplane/internal/ui"
 )
 
 var (
@@ -41,7 +41,7 @@ func runList(cmd *cobra.Command, args []string) error {
 	// Load config to get cluster name
 	cfg, err := config.Load("")
 	if err != nil {
-		color.Red("✗ %v", err)
+		fmt.Println(ui.Error("%v", err))
 		return err
 	}
 
@@ -51,18 +51,18 @@ func runList(cmd *cobra.Command, args []string) error {
 	// Check cluster exists
 	exists, err := kind.ClusterExists(cfg.Cluster.Name)
 	if err != nil {
-		color.Red("✗ Failed to check cluster: %v", err)
+		fmt.Println(ui.Error("Failed to check cluster: %v", err))
 		return err
 	}
 	if !exists {
-		color.Red("✗ Cluster '%s' not found. Run 'kindplane up' first.", cfg.Cluster.Name)
+		fmt.Println(ui.Error("Cluster '%s' not found. Run 'kindplane up' first.", cfg.Cluster.Name))
 		return fmt.Errorf("cluster not found")
 	}
 
 	// Get kube client
 	kubeClient, err := kind.GetKubeClient(cfg.Cluster.Name)
 	if err != nil {
-		color.Red("✗ Failed to connect to cluster: %v", err)
+		fmt.Println(ui.Error("Failed to connect to cluster: %v", err))
 		return err
 	}
 
@@ -70,58 +70,50 @@ func runList(cmd *cobra.Command, args []string) error {
 	helmInstaller := helm.NewInstaller(kubeClient)
 	releases, err := helmInstaller.ListReleases(ctx, listNamespace)
 	if err != nil {
-		color.Red("✗ Failed to list releases: %v", err)
+		fmt.Println(ui.Error("Failed to list releases: %v", err))
 		return err
 	}
 
 	if len(releases) == 0 {
 		if listNamespace != "" {
-			color.Yellow("! No releases found in namespace %s", listNamespace)
+			fmt.Println(ui.Warning("No releases found in namespace %s", listNamespace))
 		} else {
-			color.Yellow("! No releases found")
+			fmt.Println(ui.Warning("No releases found"))
 		}
 		return nil
 	}
 
-	// Print header
-	fmt.Println()
-	fmt.Printf("%-20s %-20s %-10s %-12s %-30s %s\n",
-		"NAME", "NAMESPACE", "REVISION", "STATUS", "CHART", "UPDATED")
-	fmt.Println("----------------------------------------------------------------------------------------------------")
+	// Build table data
+	headers := []string{"NAME", "NAMESPACE", "REVISION", "STATUS", "CHART", "UPDATED"}
+	var rows [][]string
 
-	// Print releases
 	for _, rel := range releases {
 		updated := ""
 		if !rel.Updated.IsZero() {
 			updated = rel.Updated.Format("2006-01-02 15:04:05")
 		}
 
-		statusColor := color.New(color.FgGreen)
-		if rel.Status != "deployed" {
-			statusColor = color.New(color.FgYellow)
+		status := rel.Status
+		if rel.Status == "deployed" {
+			status = ui.IconSuccess + " deployed"
+		} else {
+			status = ui.IconWarning + " " + rel.Status
 		}
 
-		fmt.Printf("%-20s %-20s %-10d ",
-			truncate(rel.Name, 20),
-			truncate(rel.Namespace, 20),
-			rel.Revision)
-		_, _ = statusColor.Printf("%-12s ", rel.Status)
-		fmt.Printf("%-30s %s\n",
-			truncate(rel.Chart, 30),
-			updated)
+		rows = append(rows, []string{
+			ui.TruncateWithEllipsis(rel.Name, 20),
+			ui.TruncateWithEllipsis(rel.Namespace, 20),
+			fmt.Sprintf("%d", rel.Revision),
+			status,
+			ui.TruncateWithEllipsis(rel.Chart, 30),
+			updated,
+		})
 	}
 
 	fmt.Println()
-	return nil
-}
+	fmt.Println(ui.Title(ui.IconGear + " Helm Releases"))
+	fmt.Println(ui.Divider())
+	fmt.Println(ui.RenderTable(headers, rows))
 
-// truncate shortens a string to maxLen characters, adding "..." if truncated
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	if maxLen <= 3 {
-		return s[:maxLen]
-	}
-	return s[:maxLen-3] + "..."
+	return nil
 }

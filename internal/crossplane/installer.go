@@ -3,14 +3,18 @@ package crossplane
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 
+	"github.com/kanzi/kindplane/internal/config"
 	"github.com/kanzi/kindplane/internal/helm"
 )
 
@@ -22,6 +26,11 @@ const (
 	CrossplaneRepoURL   = "https://charts.crossplane.io/stable"
 	CrossplaneRepoName  = "crossplane-stable"
 	CrossplaneChartName = "crossplane"
+
+	// RegistryCaBundleConfigMapName is the name of the ConfigMap containing the registry CA bundle
+	RegistryCaBundleConfigMapName = "crossplane-registry-ca-bundle"
+	// RegistryCaBundleConfigMapKey is the key in the ConfigMap containing the CA bundle
+	RegistryCaBundleConfigMapKey = "ca-bundle"
 )
 
 // Installer handles Crossplane installation and management
@@ -46,6 +55,14 @@ type PodStatus struct {
 	Phase string
 }
 
+// PodInfo represents pod information for UI display
+type PodInfo struct {
+	Name    string
+	Status  string // Pod phase (Pending, Running, Succeeded, Failed)
+	Ready   bool
+	Message string // Optional status message
+}
+
 // ProviderStatus represents a Crossplane provider's status
 type ProviderStatus struct {
 	Name    string
@@ -64,27 +81,194 @@ func NewInstaller(kubeClient *kubernetes.Clientset) *Installer {
 }
 
 // Install installs Crossplane using Helm
-func (i *Installer) Install(ctx context.Context, version string) error {
-	// Add Crossplane Helm repo
-	if err := i.helmInstaller.AddRepo(ctx, CrossplaneRepoName, CrossplaneRepoURL); err != nil {
+// This is a convenience method that calls all installation steps in sequence.
+// For progress tracking, use the individual step methods instead.
+func (i *Installer) Install(ctx context.Context, fullConfig *config.Config) error {
+	cfg := fullConfig.Crossplane
+
+	// Determine repository URL (use custom if provided, otherwise default)
+	repoURL := cfg.Repo
+	if repoURL == "" {
+		repoURL = CrossplaneRepoURL
+	}
+
+	// Generate repo name from URL
+	repoName := CrossplaneRepoName
+	if cfg.Repo != "" {
+		repoName = helm.GenerateRepoName(repoURL)
+	}
+
+	// Add Helm repository
+	if err := i.AddHelmRepo(ctx, repoName, repoURL); err != nil {
+		return err
+	}
+
+	// Ensure namespace exists
+	if err := i.EnsureNamespace(ctx); err != nil {
+		return err
+	}
+
+	// Create registry CA bundle if configured
+	if cfg.RegistryCaBundle != nil {
+		if err := i.CreateRegistryCaBundle(ctx, cfg.RegistryCaBundle, fullConfig.Cluster.TrustedCAs.Workloads); err != nil {
+			return err
+		}
+	}
+
+	// Install Helm chart
+	if err := i.InstallHelmChart(ctx, cfg, repoURL, repoName); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// AddHelmRepo adds the Crossplane Helm repository
+func (i *Installer) AddHelmRepo(ctx context.Context, repoName, repoURL string) error {
+	if err := i.helmInstaller.AddRepo(ctx, repoName, repoURL); err != nil {
 		return fmt.Errorf("failed to add crossplane repo: %w", err)
+	}
+	return nil
+}
+
+// EnsureNamespace ensures the Crossplane namespace exists
+func (i *Installer) EnsureNamespace(ctx context.Context) error {
+	_, err := i.kubeClient.CoreV1().Namespaces().Get(ctx, CrossplaneNamespace, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			// Namespace doesn't exist, create it
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: CrossplaneNamespace,
+				},
+			}
+			if _, err := i.kubeClient.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{}); err != nil {
+				return fmt.Errorf("failed to create namespace %s: %w", CrossplaneNamespace, err)
+			}
+		} else {
+			return fmt.Errorf("failed to check namespace %s: %w", CrossplaneNamespace, err)
+		}
+	}
+	return nil
+}
+
+// CreateRegistryCaBundle creates the registry CA bundle ConfigMap if configured
+func (i *Installer) CreateRegistryCaBundle(ctx context.Context, rcb *config.RegistryCaBundleConfig, workloadCAs []config.WorkloadCA) error {
+	if err := i.createRegistryCaBundleConfigMap(ctx, rcb, workloadCAs); err != nil {
+		return fmt.Errorf("failed to create registry CA bundle ConfigMap: %w", err)
+	}
+	return nil
+}
+
+// InstallHelmChart installs the Crossplane Helm chart
+func (i *Installer) InstallHelmChart(ctx context.Context, cfg config.CrossplaneConfig, repoURL, repoName string) error {
+	// Merge values from files and inline values
+	values, err := helm.MergeValues(cfg.ValuesFiles, cfg.Values)
+	if err != nil {
+		return fmt.Errorf("failed to merge crossplane values: %w", err)
+	}
+
+	// Inject registryCaBundleConfig Helm values if configured
+	if cfg.RegistryCaBundle != nil {
+		if values == nil {
+			values = make(map[string]interface{})
+		}
+		values["registryCaBundleConfig"] = map[string]interface{}{
+			"name": RegistryCaBundleConfigMapName,
+			"key":  RegistryCaBundleConfigMapKey,
+		}
 	}
 
 	// Install Crossplane chart
 	spec := helm.ChartSpec{
-		RepoURL:     CrossplaneRepoURL,
-		RepoName:    CrossplaneRepoName,
+		RepoURL:     repoURL,
+		RepoName:    repoName,
 		ChartName:   CrossplaneChartName,
 		ReleaseName: "crossplane",
 		Namespace:   CrossplaneNamespace,
-		Version:     version,
+		Version:     cfg.Version,
 		Wait:        true,
 		Timeout:     5 * time.Minute,
-		Values:      map[string]interface{}{},
+		Values:      values,
 	}
 
 	if err := i.helmInstaller.Install(ctx, spec); err != nil {
 		return fmt.Errorf("failed to install crossplane: %w", err)
+	}
+
+	return nil
+}
+
+// createRegistryCaBundleConfigMap creates a ConfigMap containing the CA bundle for Crossplane registry access
+// Multiple CA certificates are bundled together into a single PEM file
+func (i *Installer) createRegistryCaBundleConfigMap(ctx context.Context, rcb *config.RegistryCaBundleConfig, workloadCAs []config.WorkloadCA) error {
+	// Resolve all CA file paths
+	caFilePaths, err := rcb.ResolveCAFiles(workloadCAs)
+	if err != nil {
+		return fmt.Errorf("failed to resolve CA files: %w", err)
+	}
+
+	// Read and bundle all CA certificates
+	var bundledCerts []byte
+	for _, caFilePath := range caFilePaths {
+		caContent, err := os.ReadFile(caFilePath)
+		if err != nil {
+			return fmt.Errorf("failed to read CA file %s: %w", caFilePath, err)
+		}
+		// Ensure each certificate ends with a newline for proper concatenation
+		if len(caContent) > 0 && caContent[len(caContent)-1] != '\n' {
+			caContent = append(caContent, '\n')
+		}
+		bundledCerts = append(bundledCerts, caContent...)
+	}
+
+	// Ensure the namespace exists
+	_, err = i.kubeClient.CoreV1().Namespaces().Get(ctx, CrossplaneNamespace, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			// Namespace doesn't exist, create it
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: CrossplaneNamespace,
+				},
+			}
+			if _, err := i.kubeClient.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{}); err != nil {
+				return fmt.Errorf("failed to create namespace %s: %w", CrossplaneNamespace, err)
+			}
+		} else {
+			return fmt.Errorf("failed to check namespace %s: %w", CrossplaneNamespace, err)
+		}
+	}
+
+	// Create or update the ConfigMap
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      RegistryCaBundleConfigMapName,
+			Namespace: CrossplaneNamespace,
+		},
+		Data: map[string]string{
+			RegistryCaBundleConfigMapKey: string(bundledCerts),
+		},
+	}
+
+	// Try to get existing ConfigMap
+	_, err = i.kubeClient.CoreV1().ConfigMaps(CrossplaneNamespace).Get(ctx, RegistryCaBundleConfigMapName, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			// ConfigMap doesn't exist, create it
+			_, err = i.kubeClient.CoreV1().ConfigMaps(CrossplaneNamespace).Create(ctx, configMap, metav1.CreateOptions{})
+			if err != nil {
+				return fmt.Errorf("failed to create ConfigMap %s: %w", RegistryCaBundleConfigMapName, err)
+			}
+		} else {
+			return fmt.Errorf("failed to check ConfigMap %s: %w", RegistryCaBundleConfigMapName, err)
+		}
+	} else {
+		// ConfigMap exists, update it
+		_, err = i.kubeClient.CoreV1().ConfigMaps(CrossplaneNamespace).Update(ctx, configMap, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to update ConfigMap %s: %w", RegistryCaBundleConfigMapName, err)
+		}
 	}
 
 	return nil
@@ -95,12 +279,27 @@ func (i *Installer) WaitForReady(ctx context.Context) error {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
+	// Check immediately first
+	ready, err := i.isReady(ctx)
+	if err == nil && ready {
+		return nil
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			ready, err := i.isReady(ctx)
+			// Create a timeout context for the isReady check to prevent hanging
+			checkCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			ready, err := i.isReady(checkCtx)
+			cancel()
+			
+			// If context was cancelled, return immediately
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			
 			if err != nil {
 				continue // Keep trying
 			}
@@ -113,10 +312,19 @@ func (i *Installer) WaitForReady(ctx context.Context) error {
 
 // isReady checks if Crossplane pods are ready
 func (i *Installer) isReady(ctx context.Context) (bool, error) {
+	// Check if context is already cancelled before making API call
+	if ctx.Err() != nil {
+		return false, ctx.Err()
+	}
+
 	pods, err := i.kubeClient.CoreV1().Pods(CrossplaneNamespace).List(ctx, metav1.ListOptions{
 		LabelSelector: "app=crossplane",
 	})
 	if err != nil {
+		// If context was cancelled during the call, return the cancellation error
+		if ctx.Err() != nil {
+			return false, ctx.Err()
+		}
 		return false, err
 	}
 
@@ -125,6 +333,11 @@ func (i *Installer) isReady(ctx context.Context) (bool, error) {
 	}
 
 	for _, pod := range pods.Items {
+		// Check context cancellation during iteration
+		if ctx.Err() != nil {
+			return false, ctx.Err()
+		}
+		
 		for _, cond := range pod.Status.Conditions {
 			if cond.Type == "Ready" && cond.Status != "True" {
 				return false, nil
@@ -133,6 +346,74 @@ func (i *Installer) isReady(ctx context.Context) (bool, error) {
 	}
 
 	return true, nil
+}
+
+// GetPodStatus returns pod status information for UI display
+// Returns list of pod info, whether all pods are ready, and any error
+func (i *Installer) GetPodStatus(ctx context.Context) ([]PodInfo, bool, error) {
+	pods, err := i.kubeClient.CoreV1().Pods(CrossplaneNamespace).List(ctx, metav1.ListOptions{
+		LabelSelector: "app=crossplane",
+	})
+	if err != nil {
+		// If context was cancelled during the call, return the cancellation error
+		if ctx.Err() != nil {
+			return nil, false, ctx.Err()
+		}
+		return nil, false, err
+	}
+
+	if len(pods.Items) == 0 {
+		return []PodInfo{}, false, nil
+	}
+
+	var podInfos []PodInfo
+	allReady := true
+
+	for _, pod := range pods.Items {
+		// Check if pod is ready
+		podReady := false
+		var message string
+		for _, cond := range pod.Status.Conditions {
+			if cond.Type == "Ready" {
+				if cond.Status == "True" {
+					podReady = true
+				} else {
+					message = cond.Message
+				}
+				break
+			}
+		}
+
+		// If no Ready condition found, check container statuses
+		if !podReady && len(pod.Status.ContainerStatuses) > 0 {
+			for _, cs := range pod.Status.ContainerStatuses {
+				if cs.State.Waiting != nil {
+					message = cs.State.Waiting.Reason
+					if cs.State.Waiting.Message != "" {
+						message = cs.State.Waiting.Message
+					}
+				} else if cs.State.Running != nil {
+					// Container is running but not ready yet
+					if !cs.Ready {
+						message = "Starting..."
+					}
+				}
+			}
+		}
+
+		podInfos = append(podInfos, PodInfo{
+			Name:    pod.Name,
+			Status:  string(pod.Status.Phase),
+			Ready:   podReady,
+			Message: message,
+		})
+
+		if !podReady {
+			allReady = false
+		}
+	}
+
+	return podInfos, allReady && len(podInfos) > 0, nil
 }
 
 // InstallProvider installs a Crossplane provider

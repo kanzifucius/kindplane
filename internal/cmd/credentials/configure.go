@@ -6,12 +6,12 @@ import (
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
 	"github.com/kanzi/kindplane/internal/config"
 	"github.com/kanzi/kindplane/internal/credentials"
 	"github.com/kanzi/kindplane/internal/kind"
+	"github.com/kanzi/kindplane/internal/ui"
 )
 
 var (
@@ -49,7 +49,7 @@ func runConfigure(cmd *cobra.Command, args []string) error {
 	// Load config
 	cfg, err := config.Load("")
 	if err != nil {
-		color.Red("✗ %v", err)
+		fmt.Println(ui.Error("%v", err))
 		return err
 	}
 
@@ -59,18 +59,18 @@ func runConfigure(cmd *cobra.Command, args []string) error {
 	// Check cluster exists
 	exists, err := kind.ClusterExists(cfg.Cluster.Name)
 	if err != nil {
-		color.Red("✗ Failed to check cluster: %v", err)
+		fmt.Println(ui.Error("Failed to check cluster: %v", err))
 		return err
 	}
 	if !exists {
-		color.Red("✗ Cluster '%s' not found. Run 'kindplane up' first.", cfg.Cluster.Name)
+		fmt.Println(ui.Error("Cluster '%s' not found. Run 'kindplane up' first.", cfg.Cluster.Name))
 		return fmt.Errorf("cluster not found")
 	}
 
 	// Get kube client
 	kubeClient, err := kind.GetKubeClient(cfg.Cluster.Name)
 	if err != nil {
-		color.Red("✗ Failed to connect to cluster: %v", err)
+		fmt.Println(ui.Error("Failed to connect to cluster: %v", err))
 		return err
 	}
 
@@ -93,37 +93,37 @@ func runConfigure(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(providers) == 0 {
-		color.Yellow("! No providers selected")
+		fmt.Println(ui.Warning("No providers selected"))
 		return nil
 	}
 
 	for _, provider := range providers {
 		fmt.Println()
-		color.Cyan("Configuring %s credentials...", provider)
+		fmt.Println(ui.Info("Configuring %s credentials...", provider))
 
 		switch provider {
 		case "aws":
 			if err := configureAWS(ctx, credManager); err != nil {
-				color.Red("✗ Failed to configure AWS: %v", err)
+				fmt.Println(ui.Error("Failed to configure AWS: %v", err))
 				return err
 			}
 		case "azure":
 			if err := configureAzure(ctx, credManager); err != nil {
-				color.Red("✗ Failed to configure Azure: %v", err)
+				fmt.Println(ui.Error("Failed to configure Azure: %v", err))
 				return err
 			}
 		case "kubernetes":
 			if err := configureKubernetes(ctx, credManager); err != nil {
-				color.Red("✗ Failed to configure Kubernetes: %v", err)
+				fmt.Println(ui.Error("Failed to configure Kubernetes: %v", err))
 				return err
 			}
 		default:
-			color.Yellow("! Unknown provider: %s", provider)
+			fmt.Println(ui.Warning("Unknown provider: %s", provider))
 		}
 	}
 
 	fmt.Println()
-	color.Green("✓ Credentials configured successfully")
+	fmt.Println(ui.Success("Credentials configured successfully"))
 	return nil
 }
 
