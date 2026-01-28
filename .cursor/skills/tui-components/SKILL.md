@@ -18,20 +18,6 @@ description: Create and use interactive TUI components (spinners, progress bars,
 
 ## Package Architecture
 
-```
-internal/ui/
-├── tty.go           # TTY detection, output injection, polling defaults
-├── common.go        # CancellableState, HandleCancelKeys, StepStatus
-├── styles.go        # Colors, icons, lipgloss styles
-├── components.go    # Static components (boxes, titles, dividers)
-├── spinner.go       # RunSpinner, RunSpinnerWithContext
-├── progress.go      # RunProgress, ProgressBar, RenderProgressSteps
-├── multistep.go     # RunMultiStep, RunClusterCreate
-├── table.go         # RenderTable, RunTableSelect, BuildStatusTable
-├── podtable.go      # RunPodTable, PodInfo
-├── providertable.go # RunProviderTable, ProviderInfo
-└── ui_test.go       # Unit tests
-```
 
 ## Using Components
 
