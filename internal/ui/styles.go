@@ -285,3 +285,129 @@ func StatusBadge(status string) string {
 	}
 	return style.Render(status)
 }
+
+// -----------------------------------------------------------------------------
+// Dashboard Styles (TUI Bootstrap Dashboard)
+// -----------------------------------------------------------------------------
+
+// Dashboard layout constants
+const (
+	DashboardMinWidth  = 80
+	DashboardMaxWidth  = 120
+	DashboardLogBuffer = 15
+)
+
+var (
+	// Dashboard box styles (sharp borders per user preference)
+	StyleDashboardBox = lipgloss.NewStyle().
+				Border(lipgloss.NormalBorder()).
+				BorderForeground(ColorBorder).
+				Padding(0, 1)
+
+	StyleDashboardBoxActive = lipgloss.NewStyle().
+				Border(lipgloss.NormalBorder()).
+				BorderForeground(ColorPrimary).
+				Padding(0, 1)
+
+	// Dashboard header box
+	StyleDashboardHeader = lipgloss.NewStyle().
+				Border(lipgloss.NormalBorder()).
+				BorderForeground(ColorPrimary).
+				Padding(0, 1)
+
+	// Dashboard phase table styles
+	StyleDashboardPhaseHeader = lipgloss.NewStyle().
+					Bold(true).
+					Foreground(ColorSecondary)
+
+	StyleDashboardPhaseRow = lipgloss.NewStyle().
+				Foreground(ColorText)
+
+	StyleDashboardPhaseRowActive = lipgloss.NewStyle().
+					Foreground(ColorPrimary).
+					Bold(true)
+
+	StyleDashboardPhaseRowComplete = lipgloss.NewStyle().
+					Foreground(ColorSuccess)
+
+	StyleDashboardPhaseRowSkipped = lipgloss.NewStyle().
+					Foreground(ColorMuted)
+
+	StyleDashboardPhaseRowFailed = lipgloss.NewStyle().
+					Foreground(ColorError)
+
+	// Dashboard current operation panel
+	StyleDashboardOperationBox = lipgloss.NewStyle().
+					Border(lipgloss.NormalBorder()).
+					BorderForeground(ColorSecondary).
+					Padding(0, 1)
+
+	// Dashboard log panel (verbose mode)
+	StyleDashboardLogBox = lipgloss.NewStyle().
+				Border(lipgloss.NormalBorder()).
+				BorderForeground(ColorMuted).
+				Padding(0, 1)
+
+	StyleDashboardLogLine = lipgloss.NewStyle().
+				Foreground(ColorMuted)
+
+	// Dashboard footer/status bar
+	StyleDashboardFooter = lipgloss.NewStyle().
+				Foreground(ColorMuted)
+
+	StyleDashboardHotkey = lipgloss.NewStyle().
+				Foreground(ColorSecondary).
+				Bold(true)
+
+	// Dashboard timeout styles
+	StyleDashboardTimeoutOk = lipgloss.NewStyle().
+				Foreground(ColorMuted)
+
+	StyleDashboardTimeoutWarning = lipgloss.NewStyle().
+					Foreground(ColorWarning).
+					Bold(true)
+
+	StyleDashboardTimeoutCritical = lipgloss.NewStyle().
+					Foreground(ColorError).
+					Bold(true)
+
+	// Dashboard key-value display
+	StyleDashboardLabel = lipgloss.NewStyle().
+				Foreground(ColorMuted)
+
+	StyleDashboardValue = lipgloss.NewStyle().
+				Foreground(ColorText).
+				Bold(true)
+
+	// Progress bar colors for gradient effect
+	ColorProgressStart  = lipgloss.AdaptiveColor{Light: "#7C3AED", Dark: "#A78BFA"} // Purple
+	ColorProgressMiddle = lipgloss.AdaptiveColor{Light: "#2563EB", Dark: "#60A5FA"} // Blue
+	ColorProgressEnd    = lipgloss.AdaptiveColor{Light: "#059669", Dark: "#34D399"} // Green
+)
+
+// DashboardWidth returns the dashboard width clamped to min/max bounds
+func DashboardWidth(termWidth int) int {
+	if termWidth < DashboardMinWidth {
+		return DashboardMinWidth
+	}
+	if termWidth > DashboardMaxWidth {
+		return DashboardMaxWidth
+	}
+	return termWidth
+}
+
+// PhaseStatusStyle returns the appropriate style for a phase status
+func PhaseStatusStyle(status PhaseStatus) lipgloss.Style {
+	switch status {
+	case PhaseRunning:
+		return StyleDashboardPhaseRowActive
+	case PhaseComplete:
+		return StyleDashboardPhaseRowComplete
+	case PhaseSkipped:
+		return StyleDashboardPhaseRowSkipped
+	case PhaseFailed:
+		return StyleDashboardPhaseRowFailed
+	default:
+		return StyleDashboardPhaseRow
+	}
+}

@@ -23,6 +23,16 @@ import (
 	"github.com/kanzi/kindplane/internal/ui"
 )
 
+// bootstrapMode controls how the bootstrap UI is rendered
+type bootstrapMode int
+
+const (
+	// bootstrapModeDashboard uses the TUI dashboard (for TTY)
+	bootstrapModeDashboard bootstrapMode = iota
+	// bootstrapModePrint uses traditional print-based output (for non-TTY/CI)
+	bootstrapModePrint
+)
+
 var (
 	upSkipCrossplane    bool
 	upSkipProviders     bool
@@ -124,109 +134,273 @@ func runUp(cmd *cobra.Command, args []string) error {
 	// Require config
 	requireConfig()
 
-	ctx, cancel := context.WithTimeout(context.Background(), upTimeout)
-	defer cancel()
+	// Determine bootstrap mode based on TTY
+	mode := bootstrapModePrint
+	if ui.IsTTY() {
+		mode = bootstrapModeDashboard
+	}
 
 	// Build phase tracker
 	pt := buildPhases()
 
+	if mode == bootstrapModeDashboard {
+		return runUpDashboard(pt)
+	}
+	return runUpPrint(pt)
+}
+
+// runUpDashboard runs the bootstrap with the TUI dashboard
+func runUpDashboard(pt *ui.PhaseTracker) error {
+	ctx := context.Background()
+
+	result, err := ui.RunBootstrapDashboard(
+		ctx,
+		pt,
+		func(ctx context.Context, ctrl *ui.DashboardController) error {
+			return executeBootstrap(ctx, pt, ctrl)
+		},
+		ui.WithTimeout(upTimeout),
+		ui.WithExtendAmount(5*time.Minute),
+	)
+
+	if err != nil {
+		return err
+	}
+
+	if !result.Success {
+		// Print final summary after dashboard exits
+		pt.PrintSummary()
+		if result.Error != nil {
+			return result.Error
+		}
+		return fmt.Errorf("%s", result.Message)
+	}
+
+	// Print success message after dashboard exits
+	pt.PrintSuccessWithHint("Cluster ready!", fmt.Sprintf("kubectl cluster-info --context %s", cfg.GetKubeContext()))
+	return nil
+}
+
+// runUpPrint runs the bootstrap with traditional print-based output (non-TTY/CI)
+func runUpPrint(pt *ui.PhaseTracker) error {
+	ctx, cancel := context.WithTimeout(context.Background(), upTimeout)
+	defer cancel()
+
 	// Print header with phase list
 	pt.PrintHeader()
 
+	// Execute bootstrap with nil controller (print mode)
+	if err := executeBootstrap(ctx, pt, nil); err != nil {
+		pt.PrintSummary()
+		return err
+	}
+
+	// Success!
+	pt.PrintSuccessWithHint("Cluster ready!", fmt.Sprintf("kubectl cluster-info --context %s", cfg.GetKubeContext()))
+	return nil
+}
+
+// executeBootstrap performs the actual bootstrap operations
+// If ctrl is non-nil, sends updates to the dashboard; otherwise uses print-based output
+func executeBootstrap(ctx context.Context, pt *ui.PhaseTracker, ctrl *ui.DashboardController) error {
 	// Track if we created the cluster (for rollback)
 	clusterCreated := false
 
 	// Bootstrap context for shared resources
 	var bc *bootstrapContext
 
-	// Helper to handle phase failure with summary
-	handleFailure := func(err error) error {
-		pt.FailPhase(err)
-		pt.PrintSummary()
+	// Helper to handle phase failure
+	handleFailure := func(phaseName string, err error) error {
+		if ctrl != nil {
+			ctrl.FailPhase(phaseName, err)
+		} else {
+			pt.FailPhase(err)
+		}
 		if upRollbackOnFailure && clusterCreated {
-			fmt.Println(ui.Warning("Rolling back: deleting cluster..."))
-			if delErr := kind.DeleteCluster(ctx, cfg.Cluster.Name); delErr != nil {
-				fmt.Println(ui.Error("Failed to delete cluster during rollback: %v", delErr))
+			if ctrl != nil {
+				ctrl.Log("Rolling back: deleting cluster...")
 			} else {
-				fmt.Println(ui.Info("Cluster deleted"))
+				fmt.Println(ui.Warning("Rolling back: deleting cluster..."))
+			}
+			if delErr := kind.DeleteCluster(ctx, cfg.Cluster.Name); delErr != nil {
+				if ctrl != nil {
+					ctrl.Log(fmt.Sprintf("Failed to delete cluster: %v", delErr))
+				} else {
+					fmt.Println(ui.Error("Failed to delete cluster during rollback: %v", delErr))
+				}
+			} else {
+				if ctrl != nil {
+					ctrl.Log("Cluster deleted")
+				} else {
+					fmt.Println(ui.Info("Cluster deleted"))
+				}
 			}
 		}
 		return err
 	}
 
+	// Helper to start a phase
+	startPhase := func(name string) {
+		if ctrl != nil {
+			ctrl.StartPhase(name)
+		} else {
+			pt.StartPhase(name)
+		}
+	}
+
+	// Helper to complete a phase
+	completePhase := func(name string, message string) {
+		if ctrl != nil {
+			ctrl.CompletePhase(name, message)
+		} else {
+			if message != "" {
+				pt.CompletePhaseWithMessage(message)
+			} else {
+				pt.CompletePhase()
+			}
+		}
+	}
+
+	// Helper to skip a phase
+	skipPhase := func(name string, reason string) {
+		if ctrl != nil {
+			ctrl.SkipPhase(name, reason)
+		} else {
+			pt.SkipPhase(name, reason)
+		}
+	}
+
+	// Helper to update operation status (dashboard only)
+	updateOp := func(step string, progress float64) {
+		if ctrl != nil {
+			ctrl.UpdateOperation(step, progress)
+		}
+	}
+
+	// Helper to log a message
+	log := func(msg string) {
+		if ctrl != nil {
+			ctrl.Log(msg)
+		}
+	}
+
 	// Phase: Create local registry
 	var registryManager *registry.Manager
 	if cfg.Cluster.Registry.Enabled {
-		pt.StartPhase(phaseRegistry)
+		startPhase(phaseRegistry)
+		updateOp("Creating registry container...", -1)
 		registryManager = registry.NewManager(&cfg.Cluster.Registry)
 		if err := registryManager.Create(ctx); err != nil {
-			return handleFailure(fmt.Errorf("failed to create registry: %w", err))
+			return handleFailure(phaseRegistry, fmt.Errorf("failed to create registry: %w", err))
 		}
-		pt.CompletePhaseWithMessage(fmt.Sprintf("Registry available at localhost:%d", cfg.Cluster.Registry.GetPort()))
+		completePhase(phaseRegistry, fmt.Sprintf("Registry available at localhost:%d", cfg.Cluster.Registry.GetPort()))
 	}
 
 	// Phase: Configure trusted CAs
 	if kind.HasTrustedCAs(cfg) {
-		pt.StartPhase(phaseTrustedCAs)
+		startPhase(phaseTrustedCAs)
+		updateOp("Validating CA certificates...", -1)
 		var caSummary *kind.TrustedCAsSummary
-		if err := ui.RunSpinnerWithContext(ctx, "Validating CA certificates", func(spinnerCtx context.Context) error {
-			var err error
-			caSummary, err = kind.ValidateTrustedCAs(cfg)
-			return err
-		}); err != nil {
-			return handleFailure(fmt.Errorf("failed to configure trusted CAs: %w", err))
+		var validateErr error
+		if ctrl != nil {
+			// Dashboard mode: execute directly
+			caSummary, validateErr = kind.ValidateTrustedCAs(cfg)
+		} else {
+			// Print mode: use spinner
+			validateErr = ui.RunSpinnerWithContext(ctx, "Validating CA certificates", func(spinnerCtx context.Context) error {
+				var err error
+				caSummary, err = kind.ValidateTrustedCAs(cfg)
+				return err
+			})
 		}
-		pt.CompletePhaseWithMessage(fmt.Sprintf("%d registry CA(s), %d workload CA(s)", caSummary.RegistryCount, caSummary.WorkloadCount))
+		if validateErr != nil {
+			return handleFailure(phaseTrustedCAs, fmt.Errorf("failed to configure trusted CAs: %w", validateErr))
+		}
+		completePhase(phaseTrustedCAs, fmt.Sprintf("%d registry CA(s), %d workload CA(s)", caSummary.RegistryCount, caSummary.WorkloadCount))
 	}
 
 	// Phase: Create Kind cluster
-	pt.StartPhase(phaseCluster)
+	startPhase(phaseCluster)
 	exists, err := kind.ClusterExists(cfg.Cluster.Name)
 	if err != nil {
-		return handleFailure(fmt.Errorf("failed to check cluster status: %w", err))
+		return handleFailure(phaseCluster, fmt.Errorf("failed to check cluster status: %w", err))
 	}
 
 	if exists {
-		pt.SkipPhase(phaseCluster, "already exists")
+		skipPhase(phaseCluster, "already exists")
 	} else {
 		// Display cluster configuration details
 		nodeImage, imageSource := kind.GetNodeImage(cfg)
-		if nodeImage != "" {
-			fmt.Println(ui.KeyValueIndented("Node Image", ui.Code(nodeImage), 2))
-			fmt.Println(ui.KeyValueIndented("Source", imageSource, 2))
+		if ctrl != nil {
+			if nodeImage != "" {
+				log(fmt.Sprintf("Node Image: %s (%s)", nodeImage, imageSource))
+			} else {
+				log(fmt.Sprintf("Node Image: Kind default (%s)", imageSource))
+			}
 		} else {
-			fmt.Println(ui.KeyValueIndented("Node Image", ui.Muted("Kind default"), 2))
-			fmt.Println(ui.KeyValueIndented("Source", imageSource, 2))
+			if nodeImage != "" {
+				fmt.Println(ui.KeyValueIndented("Node Image", ui.Code(nodeImage), 2))
+				fmt.Println(ui.KeyValueIndented("Source", imageSource, 2))
+			} else {
+				fmt.Println(ui.KeyValueIndented("Node Image", ui.Muted("Kind default"), 2))
+				fmt.Println(ui.KeyValueIndented("Source", imageSource, 2))
+			}
+			fmt.Println()
 		}
-		fmt.Println()
 
-		if err := ui.RunClusterCreate(ctx, cfg.Cluster.Name, func(ctx context.Context, updates chan<- ui.StepUpdate) error {
-			logger := kind.NewLogger(updates)
-			return kind.CreateClusterWithProgress(ctx, cfg, logger)
-		}); err != nil {
-			return handleFailure(fmt.Errorf("failed to create cluster: %w", err))
+		// Create cluster with progress updates
+		if ctrl != nil {
+			// Dashboard mode: send updates via controller
+			logger := kind.NewDashboardLogger(func(step string) {
+				updateOp(step, -1)
+			})
+			if err := kind.CreateClusterWithProgress(ctx, cfg, logger); err != nil {
+				return handleFailure(phaseCluster, fmt.Errorf("failed to create cluster: %w", err))
+			}
+		} else {
+			// Print mode: use multi-step UI
+			if err := ui.RunClusterCreate(ctx, cfg.Cluster.Name, func(ctx context.Context, updates chan<- ui.StepUpdate) error {
+				logger := kind.NewLogger(updates)
+				return kind.CreateClusterWithProgress(ctx, cfg, logger)
+			}); err != nil {
+				return handleFailure(phaseCluster, fmt.Errorf("failed to create cluster: %w", err))
+			}
 		}
 		clusterCreated = true
-		pt.CompletePhase()
+		completePhase(phaseCluster, "")
 	}
 
 	// Configure registry for cluster nodes if enabled
 	if cfg.Cluster.Registry.Enabled && registryManager != nil {
-		if err := ui.RunSpinnerWithContext(ctx, "Configuring registry on cluster nodes", func(spinnerCtx context.Context) error {
-			if err := registryManager.ConfigureNodes(spinnerCtx, cfg.Cluster.Name); err != nil {
-				return err
+		updateOp("Configuring registry on cluster nodes...", -1)
+		var configErr error
+		if ctrl != nil {
+			if err := registryManager.ConfigureNodes(ctx, cfg.Cluster.Name); err != nil {
+				configErr = err
+			} else {
+				configErr = registryManager.ConnectToNetwork(ctx, "kind")
 			}
-			return registryManager.ConnectToNetwork(spinnerCtx, "kind")
-		}); err != nil {
-			return handleFailure(fmt.Errorf("failed to configure registry: %w", err))
+		} else {
+			configErr = ui.RunSpinnerWithContext(ctx, "Configuring registry on cluster nodes", func(spinnerCtx context.Context) error {
+				if err := registryManager.ConfigureNodes(spinnerCtx, cfg.Cluster.Name); err != nil {
+					return err
+				}
+				return registryManager.ConnectToNetwork(spinnerCtx, "kind")
+			})
+		}
+		if configErr != nil {
+			return handleFailure(phaseCluster, fmt.Errorf("failed to configure registry: %w", configErr))
 		}
 	}
 
 	// Phase: Connect to cluster
-	pt.StartPhase(phaseConnect)
+	startPhase(phaseConnect)
+	updateOp("Connecting to cluster...", -1)
 	var kubeClient *kubernetes.Clientset
 	var dynamicClient dynamic.Interface
-	if err := ui.RunSpinnerWithContext(ctx, "Connecting to cluster", func(spinnerCtx context.Context) error {
+	var connectErr error
+
+	connectFn := func() error {
 		var err error
 		kubeClient, err = kind.GetKubeClient(cfg.Cluster.Name)
 		if err != nil {
@@ -242,10 +416,18 @@ func runUp(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("failed to create dynamic client: %w", err)
 		}
-
 		return nil
-	}); err != nil {
-		return handleFailure(err)
+	}
+
+	if ctrl != nil {
+		connectErr = connectFn()
+	} else {
+		connectErr = ui.RunSpinnerWithContext(ctx, "Connecting to cluster", func(spinnerCtx context.Context) error {
+			return connectFn()
+		})
+	}
+	if connectErr != nil {
+		return handleFailure(phaseConnect, connectErr)
 	}
 
 	// Create diagnostics collector
@@ -258,13 +440,12 @@ func runUp(cmd *cobra.Command, args []string) error {
 		dynamicClient: dynamicClient,
 		diagCollector: diagCollector,
 	}
-	pt.CompletePhase()
+	completePhase(phaseConnect, "")
 
 	// Create local registry ConfigMap for discovery
 	if cfg.Cluster.Registry.Enabled && registryManager != nil {
 		if err := createRegistryConfigMap(ctx, kubeClient, &cfg.Cluster.Registry); err != nil {
-			// Non-fatal - continue with bootstrap
-			fmt.Println(ui.Warning("Failed to create registry ConfigMap: %v", err))
+			log(fmt.Sprintf("Warning: Failed to create registry ConfigMap: %v", err))
 		}
 	}
 
@@ -273,14 +454,14 @@ func runUp(cmd *cobra.Command, args []string) error {
 
 	// Phase: Install pre-crossplane charts
 	if pt.GetPhase(phasePreCrossplane) != nil {
-		if err := installChartsForPhaseWithTracker(ctx, helmInstaller, config.ChartPhasePrecrossplane, bc, pt, phasePreCrossplane); err != nil {
-			return handleFailure(err)
+		if err := installChartsForPhaseWithTracker(ctx, helmInstaller, config.ChartPhasePrecrossplane, bc, pt, phasePreCrossplane, ctrl); err != nil {
+			return handleFailure(phasePreCrossplane, err)
 		}
 	}
 
 	// Phase: Install Crossplane
 	if !upSkipCrossplane {
-		pt.StartPhase(phaseCrossplane)
+		startPhase(phaseCrossplane)
 		installer := crossplane.NewInstaller(kubeClient)
 		crossplaneCfg := cfg.Crossplane
 
@@ -304,62 +485,95 @@ func runUp(cmd *cobra.Command, args []string) error {
 		}
 		steps = append(steps, "Installing Helm chart")
 
-		// Show multi-step progress for installation
+		// Execute installation steps
 		title := fmt.Sprintf("Installing Crossplane %s", crossplaneCfg.Version)
-		if err := ui.RunProgressWithContext(ctx, title, steps, func(stepCtx context.Context, step string) error {
-			switch step {
-			case "Adding Helm repository":
-				return installer.AddHelmRepo(stepCtx, repoName, repoURL)
-			case "Creating namespace":
-				return installer.EnsureNamespace(stepCtx)
-			case "Creating registry CA bundle":
-				return installer.CreateRegistryCaBundle(stepCtx, crossplaneCfg.RegistryCaBundle, cfg.Cluster.TrustedCAs.Workloads)
-			case "Installing Helm chart":
-				return installer.InstallHelmChart(stepCtx, crossplaneCfg, repoURL, repoName)
-			default:
-				return fmt.Errorf("unknown installation step: %s", step)
-			}
-		}); err != nil {
-			showHelmDiagnostics(bc, "crossplane", crossplane.CrossplaneNamespace)
-			return handleFailure(fmt.Errorf("failed to install Crossplane: %w", err))
-		}
+		var installErr error
 
-		// Show live pod status table while waiting for pods to be ready
-		if err := ui.RunPodTable(ctx, "Waiting for Crossplane pods", func(pollCtx context.Context) ([]ui.PodInfo, bool, error) {
-			podInfos, allReady, err := installer.GetPodStatus(pollCtx)
-			if err != nil {
-				return nil, false, err
-			}
-
-			// Convert crossplane.PodInfo to ui.PodInfo
-			uiPodInfos := make([]ui.PodInfo, len(podInfos))
-			for i, p := range podInfos {
-				uiPodInfos[i] = ui.PodInfo{
-					Name:    p.Name,
-					Status:  p.Status,
-					Ready:   p.Ready,
-					Message: p.Message,
+		if ctrl != nil {
+			// Dashboard mode: execute steps directly with updates
+			for i, step := range steps {
+				updateOp(step, float64(i)/float64(len(steps)))
+				switch step {
+				case "Adding Helm repository":
+					installErr = installer.AddHelmRepo(ctx, repoName, repoURL)
+				case "Creating namespace":
+					installErr = installer.EnsureNamespace(ctx)
+				case "Creating registry CA bundle":
+					installErr = installer.CreateRegistryCaBundle(ctx, crossplaneCfg.RegistryCaBundle, cfg.Cluster.TrustedCAs.Workloads)
+				case "Installing Helm chart":
+					installErr = installer.InstallHelmChart(ctx, crossplaneCfg, repoURL, repoName)
+				}
+				if installErr != nil {
+					break
 				}
 			}
-
-			return uiPodInfos, allReady, nil
-		}); err != nil {
-			showCrossplaneDiagnostics(bc)
-			return handleFailure(err)
+		} else {
+			// Print mode: use progress bar
+			installErr = ui.RunProgressWithContext(ctx, title, steps, func(stepCtx context.Context, step string) error {
+				switch step {
+				case "Adding Helm repository":
+					return installer.AddHelmRepo(stepCtx, repoName, repoURL)
+				case "Creating namespace":
+					return installer.EnsureNamespace(stepCtx)
+				case "Creating registry CA bundle":
+					return installer.CreateRegistryCaBundle(stepCtx, crossplaneCfg.RegistryCaBundle, cfg.Cluster.TrustedCAs.Workloads)
+				case "Installing Helm chart":
+					return installer.InstallHelmChart(stepCtx, crossplaneCfg, repoURL, repoName)
+				default:
+					return fmt.Errorf("unknown installation step: %s", step)
+				}
+			})
 		}
-		pt.CompletePhase()
+
+		if installErr != nil {
+			showHelmDiagnostics(bc, "crossplane", crossplane.CrossplaneNamespace)
+			return handleFailure(phaseCrossplane, fmt.Errorf("failed to install Crossplane: %w", installErr))
+		}
+
+		// Wait for pods to be ready
+		updateOp("Waiting for Crossplane pods...", -1)
+		var podErr error
+		if ctrl != nil {
+			// Dashboard mode: poll directly
+			podErr = waitForCrossplanePods(ctx, installer, ctrl)
+		} else {
+			// Print mode: use pod table
+			podErr = ui.RunPodTable(ctx, "Waiting for Crossplane pods", func(pollCtx context.Context) ([]ui.PodInfo, bool, error) {
+				podInfos, allReady, err := installer.GetPodStatus(pollCtx)
+				if err != nil {
+					return nil, false, err
+				}
+
+				uiPodInfos := make([]ui.PodInfo, len(podInfos))
+				for i, p := range podInfos {
+					uiPodInfos[i] = ui.PodInfo{
+						Name:    p.Name,
+						Status:  p.Status,
+						Ready:   p.Ready,
+						Message: p.Message,
+					}
+				}
+
+				return uiPodInfos, allReady, nil
+			})
+		}
+		if podErr != nil {
+			showCrossplaneDiagnostics(bc)
+			return handleFailure(phaseCrossplane, podErr)
+		}
+		completePhase(phaseCrossplane, "")
 	}
 
 	// Phase: Install post-crossplane charts
 	if pt.GetPhase(phasePostCrossplane) != nil {
-		if err := installChartsForPhaseWithTracker(ctx, helmInstaller, config.ChartPhasePostCrossplane, bc, pt, phasePostCrossplane); err != nil {
-			return handleFailure(err)
+		if err := installChartsForPhaseWithTracker(ctx, helmInstaller, config.ChartPhasePostCrossplane, bc, pt, phasePostCrossplane, ctrl); err != nil {
+			return handleFailure(phasePostCrossplane, err)
 		}
 	}
 
 	// Phase: Install providers
 	if pt.GetPhase(phaseProviders) != nil {
-		pt.StartPhase(phaseProviders)
+		startPhase(phaseProviders)
 		providerNames := make([]string, len(cfg.Crossplane.Providers))
 		providerMap := make(map[string]config.ProviderConfig)
 		for i, p := range cfg.Crossplane.Providers {
@@ -367,85 +581,174 @@ func runUp(cmd *cobra.Command, args []string) error {
 			providerMap[p.Name] = p
 		}
 
-		// Install providers with animated progress bar
+		// Install providers
 		installer := crossplane.NewInstaller(kubeClient)
-		if err := ui.RunProgress("Installing providers", providerNames, func(name string) error {
-			provider := providerMap[name]
-			return installer.InstallProvider(ctx, provider.Name, provider.Package)
-		}); err != nil {
-			return handleFailure(err)
+		var providerErr error
+
+		if ctrl != nil {
+			// Dashboard mode: install with updates
+			for i, name := range providerNames {
+				updateOp(fmt.Sprintf("Installing %s...", name), float64(i)/float64(len(providerNames)))
+				provider := providerMap[name]
+				if err := installer.InstallProvider(ctx, provider.Name, provider.Package); err != nil {
+					providerErr = err
+					break
+				}
+			}
+		} else {
+			// Print mode: use progress bar
+			providerErr = ui.RunProgress("Installing providers", providerNames, func(name string) error {
+				provider := providerMap[name]
+				return installer.InstallProvider(ctx, provider.Name, provider.Package)
+			})
 		}
 
-		// Wait for providers to be healthy with animated table
-		if err := ui.RunProviderTable(ctx, "Waiting for providers to be healthy", func(pollCtx context.Context) ([]ui.ProviderInfo, bool, error) {
-			statuses, err := installer.GetProviderStatus(pollCtx)
-			if err != nil {
-				return nil, false, nil // Keep trying on error
-			}
+		if providerErr != nil {
+			return handleFailure(phaseProviders, providerErr)
+		}
 
-			providers := make([]ui.ProviderInfo, len(statuses))
-			allHealthy := true
-			for i, s := range statuses {
-				providers[i] = ui.ProviderInfo{
-					Name:    s.Name,
-					Package: s.Package,
-					Healthy: s.Healthy,
-					Message: s.Message,
+		// Wait for providers to be healthy
+		updateOp("Waiting for providers to be healthy...", -1)
+		var healthErr error
+		if ctrl != nil {
+			healthErr = waitForProviders(ctx, installer, ctrl)
+		} else {
+			healthErr = ui.RunProviderTable(ctx, "Waiting for providers to be healthy", func(pollCtx context.Context) ([]ui.ProviderInfo, bool, error) {
+				statuses, err := installer.GetProviderStatus(pollCtx)
+				if err != nil {
+					return nil, false, nil
 				}
-				if !s.Healthy {
-					allHealthy = false
-				}
-			}
 
-			return providers, allHealthy && len(providers) > 0, nil
-		}); err != nil {
+				providers := make([]ui.ProviderInfo, len(statuses))
+				allHealthy := true
+				for i, s := range statuses {
+					providers[i] = ui.ProviderInfo{
+						Name:    s.Name,
+						Package: s.Package,
+						Healthy: s.Healthy,
+						Message: s.Message,
+					}
+					if !s.Healthy {
+						allHealthy = false
+					}
+				}
+
+				return providers, allHealthy && len(providers) > 0, nil
+			})
+		}
+		if healthErr != nil {
 			showProviderDiagnostics(bc)
-			return handleFailure(err)
+			return handleFailure(phaseProviders, healthErr)
 		}
-		pt.CompletePhase()
+		completePhase(phaseProviders, fmt.Sprintf("%d provider(s) healthy", len(providerNames)))
 	}
 
 	// Phase: Install post-providers charts
 	if pt.GetPhase(phasePostProviders) != nil {
-		if err := installChartsForPhaseWithTracker(ctx, helmInstaller, config.ChartPhasePostProviders, bc, pt, phasePostProviders); err != nil {
-			return handleFailure(err)
+		if err := installChartsForPhaseWithTracker(ctx, helmInstaller, config.ChartPhasePostProviders, bc, pt, phasePostProviders, ctrl); err != nil {
+			return handleFailure(phasePostProviders, err)
 		}
 	}
 
 	// Phase: Install final charts
 	if pt.GetPhase(phaseFinal) != nil {
-		if err := installChartsForPhaseWithTracker(ctx, helmInstaller, config.ChartPhaseFinal, bc, pt, phaseFinal); err != nil {
-			return handleFailure(err)
+		if err := installChartsForPhaseWithTracker(ctx, helmInstaller, config.ChartPhaseFinal, bc, pt, phaseFinal, ctrl); err != nil {
+			return handleFailure(phaseFinal, err)
 		}
 	}
 
 	// Phase: Apply compositions
 	if pt.GetPhase(phaseCompositions) != nil {
-		pt.StartPhase(phaseCompositions)
+		startPhase(phaseCompositions)
 		installer := crossplane.NewInstaller(kubeClient)
 		for _, source := range cfg.Compositions.Sources {
+			updateOp(fmt.Sprintf("Applying %s...", source.Path), -1)
 			if err := installer.ApplyCompositions(ctx, source); err != nil {
-				return handleFailure(fmt.Errorf("failed to apply compositions from %s: %w", source.Path, err))
+				return handleFailure(phaseCompositions, fmt.Errorf("failed to apply compositions from %s: %w", source.Path, err))
 			}
 		}
-		pt.CompletePhaseWithMessage(fmt.Sprintf("%d source(s) applied", len(cfg.Compositions.Sources)))
+		completePhase(phaseCompositions, fmt.Sprintf("%d source(s) applied", len(cfg.Compositions.Sources)))
 	}
-
-	// Success!
-	pt.PrintSuccessWithHint("Cluster ready!", fmt.Sprintf("kubectl cluster-info --context %s", cfg.GetKubeContext()))
 
 	return nil
 }
 
+// waitForCrossplanePods waits for Crossplane pods to be ready (dashboard mode)
+func waitForCrossplanePods(ctx context.Context, installer *crossplane.Installer, ctrl *ui.DashboardController) error {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			podInfos, allReady, err := installer.GetPodStatus(ctx)
+			if err != nil {
+				ctrl.Log(fmt.Sprintf("Error checking pods: %v", err))
+				continue
+			}
+
+			// Log current status
+			for _, p := range podInfos {
+				if !p.Ready {
+					ctrl.UpdateOperation(fmt.Sprintf("Waiting for %s (%s)", p.Name, p.Status), -1)
+					break
+				}
+			}
+
+			if allReady && len(podInfos) > 0 {
+				return nil
+			}
+		}
+	}
+}
+
+// waitForProviders waits for providers to be healthy (dashboard mode)
+func waitForProviders(ctx context.Context, installer *crossplane.Installer, ctrl *ui.DashboardController) error {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			statuses, err := installer.GetProviderStatus(ctx)
+			if err != nil {
+				continue
+			}
+
+			allHealthy := true
+			for _, s := range statuses {
+				if !s.Healthy {
+					allHealthy = false
+					ctrl.UpdateOperation(fmt.Sprintf("Waiting for %s...", s.Name), -1)
+					break
+				}
+			}
+
+			if allHealthy && len(statuses) > 0 {
+				return nil
+			}
+		}
+	}
+}
+
 // installChartsForPhase installs all charts configured for a specific phase
 // installChartsForPhaseWithTracker installs charts and tracks progress with the PhaseTracker
-func installChartsForPhaseWithTracker(ctx context.Context, helmInstaller *helm.Installer, phase string, bc *bootstrapContext, pt *ui.PhaseTracker, phaseName string) error {
+func installChartsForPhaseWithTracker(ctx context.Context, helmInstaller *helm.Installer, phase string, bc *bootstrapContext, pt *ui.PhaseTracker, phaseName string, ctrl *ui.DashboardController) error {
 	charts := getChartsForPhase(phase)
 	if len(charts) == 0 {
 		return nil
 	}
 
-	pt.StartPhase(phaseName)
+	// Start phase
+	if ctrl != nil {
+		ctrl.StartPhase(phaseName)
+	} else {
+		pt.StartPhase(phaseName)
+	}
 
 	// Build chart names for progress display
 	chartNames := make([]string, len(charts))
@@ -457,26 +760,46 @@ func installChartsForPhaseWithTracker(ctx context.Context, helmInstaller *helm.I
 
 	// Track failed chart for diagnostics
 	var failedChart config.ChartConfig
+	var installErr error
 
-	// Install charts with animated progress bar
-	title := fmt.Sprintf("Installing %s charts", phase)
-	err := ui.RunProgress(title, chartNames, func(name string) error {
-		chart := chartMap[name]
-		if installErr := helmInstaller.InstallChartFromConfig(ctx, chart); installErr != nil {
-			failedChart = chart
-			return installErr
+	if ctrl != nil {
+		// Dashboard mode: install with updates
+		for i, name := range chartNames {
+			ctrl.UpdateOperation(fmt.Sprintf("Installing %s...", name), float64(i)/float64(len(chartNames)))
+			chart := chartMap[name]
+			if err := helmInstaller.InstallChartFromConfig(ctx, chart); err != nil {
+				failedChart = chart
+				installErr = err
+				break
+			}
 		}
-		return nil
-	})
+	} else {
+		// Print mode: use progress bar
+		title := fmt.Sprintf("Installing %s charts", phase)
+		installErr = ui.RunProgress(title, chartNames, func(name string) error {
+			chart := chartMap[name]
+			if err := helmInstaller.InstallChartFromConfig(ctx, chart); err != nil {
+				failedChart = chart
+				return err
+			}
+			return nil
+		})
+	}
 
-	if err != nil {
+	if installErr != nil {
 		if failedChart.Name != "" {
 			showChartDiagnostics(bc, failedChart)
 		}
-		return err
+		return installErr
 	}
 
-	pt.CompletePhaseWithMessage(fmt.Sprintf("%d chart(s) installed", len(charts)))
+	// Complete phase
+	message := fmt.Sprintf("%d chart(s) installed", len(charts))
+	if ctrl != nil {
+		ctrl.CompletePhase(phaseName, message)
+	} else {
+		pt.CompletePhaseWithMessage(message)
+	}
 	return nil
 }
 

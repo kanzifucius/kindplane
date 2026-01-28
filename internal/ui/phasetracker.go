@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 )
 
 // -----------------------------------------------------------------------------
@@ -71,8 +72,37 @@ func (s PhaseStatus) Icon() string {
 type Phase struct {
 	Name       string
 	Status     PhaseStatus
-	SkipReason string // Reason if skipped (e.g., "already exists", "none configured")
-	Error      error  // Error if failed
+	SkipReason string    // Reason if skipped (e.g., "already exists", "none configured")
+	Error      error     // Error if failed
+	Message    string    // Completion message (e.g., "2 registry CAs configured")
+	StartTime  time.Time // When phase started
+	EndTime    time.Time // When phase ended
+}
+
+// Duration returns the duration of the phase (or elapsed time if still running)
+func (p *Phase) Duration() time.Duration {
+	if p.StartTime.IsZero() {
+		return 0
+	}
+	if p.EndTime.IsZero() {
+		return time.Since(p.StartTime)
+	}
+	return p.EndTime.Sub(p.StartTime)
+}
+
+// FormatDuration returns a human-readable duration string
+func (p *Phase) FormatDuration() string {
+	d := p.Duration()
+	if d == 0 {
+		return "-"
+	}
+	if d < time.Second {
+		return "<1s"
+	}
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	return fmt.Sprintf("%dm %ds", int(d.Minutes()), int(d.Seconds())%60)
 }
 
 // -----------------------------------------------------------------------------
@@ -210,6 +240,7 @@ func (pt *PhaseTracker) StartPhase(name string) bool {
 	for i, phase := range pt.phases {
 		if phase.Name == name {
 			phase.Status = PhaseRunning
+			phase.StartTime = time.Now()
 			pt.current = i
 
 			// Print phase header with [N/M] prefix
@@ -226,6 +257,7 @@ func (pt *PhaseTracker) CompletePhase() {
 	if pt.current >= 0 && pt.current < len(pt.phases) {
 		phase := pt.phases[pt.current]
 		phase.Status = PhaseComplete
+		phase.EndTime = time.Now()
 		fmt.Fprintf(pt.options.output, "%s %s\n\n",
 			StyleSuccess.Render(IconSuccess),
 			phase.Name)
@@ -244,6 +276,74 @@ func (pt *PhaseTracker) CompletePhaseWithMessage(message string) {
 			fmt.Fprintf(pt.options.output, "  %s\n", StyleMuted.Render(message))
 		}
 		fmt.Fprintln(pt.options.output)
+	}
+}
+
+// -----------------------------------------------------------------------------
+// State-Only Methods (for Dashboard integration)
+// -----------------------------------------------------------------------------
+// These methods update phase state without printing anything.
+// Visual feedback is handled by the Dashboard or other UI components.
+
+// MarkPhaseRunning marks a phase as running without printing.
+// Use this when visual feedback is handled by another component (e.g., Dashboard).
+// Returns false if the phase is not found.
+func (pt *PhaseTracker) MarkPhaseRunning(name string) bool {
+	for i, phase := range pt.phases {
+		if phase.Name == name {
+			phase.Status = PhaseRunning
+			phase.StartTime = time.Now()
+			pt.current = i
+			return true
+		}
+	}
+	return false
+}
+
+// MarkPhaseComplete marks the current phase as complete without printing.
+// Use this when visual feedback is handled by another component.
+func (pt *PhaseTracker) MarkPhaseComplete() {
+	if pt.current >= 0 && pt.current < len(pt.phases) {
+		phase := pt.phases[pt.current]
+		phase.Status = PhaseComplete
+		phase.EndTime = time.Now()
+	}
+}
+
+// MarkPhaseCompleteWithMessage marks the current phase as complete with a message, without printing.
+// The message is stored and can be displayed by the Dashboard.
+func (pt *PhaseTracker) MarkPhaseCompleteWithMessage(message string) {
+	if pt.current >= 0 && pt.current < len(pt.phases) {
+		phase := pt.phases[pt.current]
+		phase.Status = PhaseComplete
+		phase.Message = message
+		phase.EndTime = time.Now()
+	}
+}
+
+// MarkPhaseSkipped marks a phase as skipped without printing.
+// Use this when visual feedback is handled by another component.
+func (pt *PhaseTracker) MarkPhaseSkipped(name string, reason string) bool {
+	for i, phase := range pt.phases {
+		if phase.Name == name {
+			phase.Status = PhaseSkipped
+			phase.SkipReason = reason
+			phase.EndTime = time.Now()
+			pt.current = i
+			return true
+		}
+	}
+	return false
+}
+
+// MarkPhaseFailed marks the current phase as failed without printing.
+// Use this when visual feedback is handled by another component.
+func (pt *PhaseTracker) MarkPhaseFailed(err error) {
+	if pt.current >= 0 && pt.current < len(pt.phases) {
+		phase := pt.phases[pt.current]
+		phase.Status = PhaseFailed
+		phase.Error = err
+		phase.EndTime = time.Now()
 	}
 }
 
@@ -419,4 +519,48 @@ func (pt *PhaseTracker) String() string {
 		sb.WriteString(fmt.Sprintf("  %s [%s] %s\n", marker, phase.Status, phase.Name))
 	}
 	return sb.String()
+}
+
+// -----------------------------------------------------------------------------
+// Accessor Methods (for Dashboard integration)
+// -----------------------------------------------------------------------------
+
+// Phases returns all phases (for Dashboard rendering)
+func (pt *PhaseTracker) Phases() []*Phase {
+	return pt.phases
+}
+
+// PhaseCount returns the total number of phases
+func (pt *PhaseTracker) PhaseCount() int {
+	return len(pt.phases)
+}
+
+// CurrentIndex returns the 0-based index of the current phase
+func (pt *PhaseTracker) CurrentIndex() int {
+	return pt.current
+}
+
+// Title returns the tracker title
+func (pt *PhaseTracker) Title() string {
+	return pt.title
+}
+
+// ClusterName returns the cluster name (if set)
+func (pt *PhaseTracker) ClusterName() string {
+	return pt.options.clusterName
+}
+
+// ConfigFile returns the config file path (if set)
+func (pt *PhaseTracker) ConfigFile() string {
+	return pt.options.configFile
+}
+
+// PhaseIndex returns the 1-based phase number for display (includes skipped phases)
+func (pt *PhaseTracker) PhaseIndex(phase *Phase) int {
+	for i, p := range pt.phases {
+		if p == phase {
+			return i + 1
+		}
+	}
+	return 0
 }

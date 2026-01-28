@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPhaseStatus_String(t *testing.T) {
@@ -366,5 +367,345 @@ func TestPhaseTracker_IndexCalculation(t *testing.T) {
 	output := buf.String()
 	if !strings.Contains(output, "[1/2]") {
 		t.Errorf("expected output to contain '[1/2]' (active index), got: %s", output)
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Tests for Phase Duration Methods
+// -----------------------------------------------------------------------------
+
+func TestPhase_Duration(t *testing.T) {
+	t.Run("returns zero when not started", func(t *testing.T) {
+		phase := &Phase{Name: "test"}
+		if d := phase.Duration(); d != 0 {
+			t.Errorf("expected Duration 0, got %v", d)
+		}
+	})
+
+	t.Run("returns elapsed time when running", func(t *testing.T) {
+		phase := &Phase{
+			Name:      "test",
+			Status:    PhaseRunning,
+			StartTime: time.Now().Add(-2 * time.Second),
+		}
+		d := phase.Duration()
+		if d < 2*time.Second || d > 3*time.Second {
+			t.Errorf("expected Duration ~2s, got %v", d)
+		}
+	})
+
+	t.Run("returns fixed duration when complete", func(t *testing.T) {
+		start := time.Now().Add(-5 * time.Second)
+		end := start.Add(3 * time.Second)
+		phase := &Phase{
+			Name:      "test",
+			Status:    PhaseComplete,
+			StartTime: start,
+			EndTime:   end,
+		}
+		d := phase.Duration()
+		if d != 3*time.Second {
+			t.Errorf("expected Duration 3s, got %v", d)
+		}
+	})
+}
+
+func TestPhase_FormatDuration(t *testing.T) {
+	tests := []struct {
+		name     string
+		phase    Phase
+		expected string
+	}{
+		{
+			name:     "not started",
+			phase:    Phase{Name: "test"},
+			expected: "-",
+		},
+		{
+			name: "sub-second",
+			phase: Phase{
+				Name:      "test",
+				StartTime: time.Now(),
+				EndTime:   time.Now().Add(500 * time.Millisecond),
+			},
+			expected: "<1s",
+		},
+		{
+			name: "seconds only",
+			phase: Phase{
+				Name:      "test",
+				StartTime: time.Now(),
+				EndTime:   time.Now().Add(45 * time.Second),
+			},
+			expected: "45s",
+		},
+		{
+			name: "minutes and seconds",
+			phase: Phase{
+				Name:      "test",
+				StartTime: time.Now(),
+				EndTime:   time.Now().Add(2*time.Minute + 15*time.Second),
+			},
+			expected: "2m 15s",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.phase.FormatDuration(); got != tt.expected {
+				t.Errorf("FormatDuration() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Tests for State-Only Mark Methods (Dashboard integration)
+// -----------------------------------------------------------------------------
+
+func TestPhaseTracker_MarkPhaseRunning(t *testing.T) {
+	var buf bytes.Buffer
+	pt := NewPhaseTracker("test", WithPhaseTrackerOutput(&buf))
+
+	pt.AddPhase("Phase 1")
+	pt.AddPhase("Phase 2")
+
+	started := pt.MarkPhaseRunning("Phase 1")
+
+	if !started {
+		t.Error("expected MarkPhaseRunning to return true")
+	}
+	if pt.current != 0 {
+		t.Errorf("expected current 0, got %d", pt.current)
+	}
+	if pt.phases[0].Status != PhaseRunning {
+		t.Errorf("expected phase status Running, got %v", pt.phases[0].Status)
+	}
+	if pt.phases[0].StartTime.IsZero() {
+		t.Error("expected StartTime to be set")
+	}
+
+	// Should NOT print anything
+	if buf.Len() != 0 {
+		t.Errorf("expected no output, got: %s", buf.String())
+	}
+}
+
+func TestPhaseTracker_MarkPhaseRunning_NotFound(t *testing.T) {
+	pt := NewPhaseTracker("test")
+	pt.AddPhase("Phase 1")
+
+	started := pt.MarkPhaseRunning("NonExistent")
+
+	if started {
+		t.Error("expected MarkPhaseRunning to return false for non-existent phase")
+	}
+}
+
+func TestPhaseTracker_MarkPhaseComplete(t *testing.T) {
+	var buf bytes.Buffer
+	pt := NewPhaseTracker("test", WithPhaseTrackerOutput(&buf))
+
+	pt.AddPhase("Phase 1")
+	pt.MarkPhaseRunning("Phase 1")
+
+	pt.MarkPhaseComplete()
+
+	if pt.phases[0].Status != PhaseComplete {
+		t.Errorf("expected phase status Complete, got %v", pt.phases[0].Status)
+	}
+	if pt.phases[0].EndTime.IsZero() {
+		t.Error("expected EndTime to be set")
+	}
+
+	// Should NOT print anything
+	if buf.Len() != 0 {
+		t.Errorf("expected no output, got: %s", buf.String())
+	}
+}
+
+func TestPhaseTracker_MarkPhaseCompleteWithMessage(t *testing.T) {
+	var buf bytes.Buffer
+	pt := NewPhaseTracker("test", WithPhaseTrackerOutput(&buf))
+
+	pt.AddPhase("Phase 1")
+	pt.MarkPhaseRunning("Phase 1")
+
+	pt.MarkPhaseCompleteWithMessage("Created 3 nodes")
+
+	if pt.phases[0].Status != PhaseComplete {
+		t.Errorf("expected phase status Complete, got %v", pt.phases[0].Status)
+	}
+	if pt.phases[0].Message != "Created 3 nodes" {
+		t.Errorf("expected Message 'Created 3 nodes', got '%s'", pt.phases[0].Message)
+	}
+	if pt.phases[0].EndTime.IsZero() {
+		t.Error("expected EndTime to be set")
+	}
+
+	// Should NOT print anything
+	if buf.Len() != 0 {
+		t.Errorf("expected no output, got: %s", buf.String())
+	}
+}
+
+func TestPhaseTracker_MarkPhaseSkipped(t *testing.T) {
+	var buf bytes.Buffer
+	pt := NewPhaseTracker("test", WithPhaseTrackerOutput(&buf))
+
+	pt.AddPhase("Phase 1")
+	pt.AddPhase("Phase 2")
+
+	skipped := pt.MarkPhaseSkipped("Phase 1", "already exists")
+
+	if !skipped {
+		t.Error("expected MarkPhaseSkipped to return true")
+	}
+	if pt.phases[0].Status != PhaseSkipped {
+		t.Errorf("expected phase status Skipped, got %v", pt.phases[0].Status)
+	}
+	if pt.phases[0].SkipReason != "already exists" {
+		t.Errorf("expected SkipReason 'already exists', got '%s'", pt.phases[0].SkipReason)
+	}
+	if pt.phases[0].EndTime.IsZero() {
+		t.Error("expected EndTime to be set")
+	}
+
+	// Should NOT print anything
+	if buf.Len() != 0 {
+		t.Errorf("expected no output, got: %s", buf.String())
+	}
+}
+
+func TestPhaseTracker_MarkPhaseSkipped_NotFound(t *testing.T) {
+	pt := NewPhaseTracker("test")
+	pt.AddPhase("Phase 1")
+
+	skipped := pt.MarkPhaseSkipped("NonExistent", "reason")
+
+	if skipped {
+		t.Error("expected MarkPhaseSkipped to return false for non-existent phase")
+	}
+}
+
+func TestPhaseTracker_MarkPhaseFailed(t *testing.T) {
+	var buf bytes.Buffer
+	pt := NewPhaseTracker("test", WithPhaseTrackerOutput(&buf))
+
+	pt.AddPhase("Phase 1")
+	pt.MarkPhaseRunning("Phase 1")
+
+	testErr := errForTest{"test error"}
+	pt.MarkPhaseFailed(testErr)
+
+	if pt.phases[0].Status != PhaseFailed {
+		t.Errorf("expected phase status Failed, got %v", pt.phases[0].Status)
+	}
+	if pt.phases[0].Error == nil {
+		t.Error("expected phase error to be set")
+	}
+	if pt.phases[0].EndTime.IsZero() {
+		t.Error("expected EndTime to be set")
+	}
+
+	// Should NOT print anything
+	if buf.Len() != 0 {
+		t.Errorf("expected no output, got: %s", buf.String())
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Tests for Accessor Methods (Dashboard integration)
+// -----------------------------------------------------------------------------
+
+func TestPhaseTracker_Phases(t *testing.T) {
+	pt := NewPhaseTracker("test")
+	pt.AddPhase("Phase 1")
+	pt.AddPhase("Phase 2")
+
+	phases := pt.Phases()
+
+	if len(phases) != 2 {
+		t.Errorf("expected 2 phases, got %d", len(phases))
+	}
+	if phases[0].Name != "Phase 1" {
+		t.Errorf("expected first phase 'Phase 1', got '%s'", phases[0].Name)
+	}
+}
+
+func TestPhaseTracker_PhaseCount(t *testing.T) {
+	pt := NewPhaseTracker("test")
+	pt.AddPhase("Phase 1")
+	pt.AddPhase("Phase 2")
+	pt.AddPhase("Phase 3")
+
+	if count := pt.PhaseCount(); count != 3 {
+		t.Errorf("expected PhaseCount 3, got %d", count)
+	}
+}
+
+func TestPhaseTracker_CurrentIndex(t *testing.T) {
+	pt := NewPhaseTracker("test")
+	pt.AddPhase("Phase 1")
+	pt.AddPhase("Phase 2")
+
+	// Initially -1
+	if idx := pt.CurrentIndex(); idx != -1 {
+		t.Errorf("expected CurrentIndex -1, got %d", idx)
+	}
+
+	// After starting first phase
+	pt.MarkPhaseRunning("Phase 1")
+	if idx := pt.CurrentIndex(); idx != 0 {
+		t.Errorf("expected CurrentIndex 0, got %d", idx)
+	}
+
+	// After completing and starting second phase
+	pt.MarkPhaseComplete()
+	pt.MarkPhaseRunning("Phase 2")
+	if idx := pt.CurrentIndex(); idx != 1 {
+		t.Errorf("expected CurrentIndex 1, got %d", idx)
+	}
+}
+
+func TestPhaseTracker_Title(t *testing.T) {
+	pt := NewPhaseTracker("Bootstrap Cluster")
+
+	if title := pt.Title(); title != "Bootstrap Cluster" {
+		t.Errorf("expected Title 'Bootstrap Cluster', got '%s'", title)
+	}
+}
+
+func TestPhaseTracker_ClusterInfo(t *testing.T) {
+	pt := NewPhaseTracker("test", WithClusterInfo("my-cluster", "kindplane.yaml"))
+
+	if name := pt.ClusterName(); name != "my-cluster" {
+		t.Errorf("expected ClusterName 'my-cluster', got '%s'", name)
+	}
+	if config := pt.ConfigFile(); config != "kindplane.yaml" {
+		t.Errorf("expected ConfigFile 'kindplane.yaml', got '%s'", config)
+	}
+}
+
+func TestPhaseTracker_PhaseIndex(t *testing.T) {
+	pt := NewPhaseTracker("test")
+	phase1 := pt.AddPhase("Phase 1")
+	phase2 := pt.AddPhase("Phase 2")
+	phase3 := pt.AddPhase("Phase 3")
+
+	if idx := pt.PhaseIndex(phase1); idx != 1 {
+		t.Errorf("expected PhaseIndex 1 for phase1, got %d", idx)
+	}
+	if idx := pt.PhaseIndex(phase2); idx != 2 {
+		t.Errorf("expected PhaseIndex 2 for phase2, got %d", idx)
+	}
+	if idx := pt.PhaseIndex(phase3); idx != 3 {
+		t.Errorf("expected PhaseIndex 3 for phase3, got %d", idx)
+	}
+
+	// Unknown phase
+	unknown := &Phase{Name: "Unknown"}
+	if idx := pt.PhaseIndex(unknown); idx != 0 {
+		t.Errorf("expected PhaseIndex 0 for unknown phase, got %d", idx)
 	}
 }
