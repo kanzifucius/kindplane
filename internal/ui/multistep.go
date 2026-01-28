@@ -129,6 +129,9 @@ func (m multiStepModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				step.Status = StepFailed
 				m.err = fmt.Errorf("step failed: %s", stepName)
 				m.done = true
+				if m.state != nil && m.state.Cancel != nil {
+					m.state.Cancel()
+				}
 				return m, tea.Quit
 			}
 		} else {
