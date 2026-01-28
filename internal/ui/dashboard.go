@@ -272,6 +272,10 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Check if timed out
 		if remaining <= 0 && !m.completed {
+			// Cancel background work context before quitting
+			if m.state != nil && m.state.Cancel != nil {
+				m.state.Cancel()
+			}
 			m.result = BootstrapCompleteMsg{
 				Success: false,
 				Message: "Bootstrap timed out",
