@@ -253,19 +253,19 @@ func RunProviderTable(parentCtx context.Context, title string, pollFn func(ctx c
 
 	final := finalModel.(providerTableModel)
 	if final.cancelled {
-		fmt.Fprintln(output, StyleWarning.Render(IconWarning)+" "+title+" (cancelled)")
+		_, _ = fmt.Fprintln(output, StyleWarning.Render(IconWarning)+" "+title+" (cancelled)")
 		return ErrCancelled
 	}
 
 	if final.err != nil {
-		fmt.Fprintln(output, StyleError.Render(IconError)+" "+title)
+		_, _ = fmt.Fprintln(output, StyleError.Render(IconError)+" "+title)
 		return final.err
 	}
 
 	// Print final success state with all providers
-	fmt.Fprintln(output, StyleSuccess.Render(IconSuccess)+" "+title)
+	_, _ = fmt.Fprintln(output, StyleSuccess.Render(IconSuccess)+" "+title)
 	for _, p := range final.providers {
-		fmt.Fprintf(output, "  %s %s\n", StyleSuccess.Render(IconSuccess), p.Name)
+		_, _ = fmt.Fprintf(output, "  %s %s\n", StyleSuccess.Render(IconSuccess), p.Name)
 	}
 
 	return nil
@@ -274,7 +274,7 @@ func RunProviderTable(parentCtx context.Context, title string, pollFn func(ctx c
 // runProviderTableNonTTY handles non-TTY fallback for provider table
 func runProviderTableNonTTY(parentCtx context.Context, title string, pollFn func(ctx context.Context) ([]ProviderInfo, bool, error), output io.Writer, pollInterval time.Duration) error {
 	printNonTTYNoticeTo(output)
-	fmt.Fprintf(output, "%s %s\n", IconRunning, title)
+	_, _ = fmt.Fprintf(output, "%s %s\n", IconRunning, title)
 
 	// Poll until all ready or error
 	for {
@@ -284,7 +284,7 @@ func runProviderTableNonTTY(parentCtx context.Context, title string, pollFn func
 		default:
 			providers, allReady, err := pollFn(parentCtx)
 			if err != nil {
-				fmt.Fprintf(output, "%s %s: %v\n", IconError, title, err)
+				_, _ = fmt.Fprintf(output, "%s %s: %v\n", IconError, title, err)
 				return err
 			}
 
@@ -296,11 +296,11 @@ func runProviderTableNonTTY(parentCtx context.Context, title string, pollFn func
 					status = "healthy"
 					icon = IconSuccess
 				}
-				fmt.Fprintf(output, "  %s %s: %s\n", icon, p.Name, status)
+				_, _ = fmt.Fprintf(output, "  %s %s: %s\n", icon, p.Name, status)
 			}
 
 			if allReady {
-				fmt.Fprintf(output, "%s %s\n", IconSuccess, title)
+				_, _ = fmt.Fprintf(output, "%s %s\n", IconSuccess, title)
 				return nil
 			}
 

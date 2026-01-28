@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -84,6 +85,13 @@ type BootstrapCompleteMsg struct {
 
 func (BootstrapCompleteMsg) isDashboardMsg() {}
 
+// PodStatusUpdateMsg updates the pod status display
+type PodStatusUpdateMsg struct {
+	Pods []PodInfo
+}
+
+func (PodStatusUpdateMsg) isDashboardMsg() {}
+
 // tickMsg is sent periodically to update elapsed time and timeout
 type tickMsg time.Time
 
@@ -116,12 +124,16 @@ type DashboardModel struct {
 
 	// UI state
 	verbose   bool // Show detailed log output
+	showPods  bool // Show pods status panel
 	width     int  // Terminal width
 	height    int  // Terminal height
 	quitting  bool
 	completed bool
 	success   bool
 	result    BootstrapCompleteMsg
+
+	// Pod status
+	pods []PodInfo
 
 	// Cancellation
 	state *CancellableState
@@ -218,6 +230,10 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.addLogLine(fmt.Sprintf("Timeout extended by %s", m.extendAmount))
 			}
 			return m, nil
+
+		case "p":
+			m.showPods = !m.showPods
+			return m, nil
 		}
 
 	case tea.WindowSizeMsg:
@@ -309,6 +325,9 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case LogLineMsg:
 		m.addLogLine(msg.Line)
 
+	case PodStatusUpdateMsg:
+		m.pods = msg.Pods
+
 	case TimeoutExtendedMsg:
 		m.deadline = msg.NewDeadline
 		m.showExtend = false
@@ -363,6 +382,11 @@ func (m DashboardModel) View() string {
 	// Verbose log panel
 	if m.verbose {
 		sections = append(sections, m.renderLogPanel(width))
+	}
+
+	// Pods status panel
+	if m.showPods {
+		sections = append(sections, m.renderPodsPanel(width))
 	}
 
 	// Footer
@@ -561,6 +585,83 @@ func (m DashboardModel) renderLogPanel(width int) string {
 	return box
 }
 
+func (m DashboardModel) renderPodsPanel(width int) string {
+	if len(m.pods) == 0 {
+		content := StyleMuted.Render("No pods yet...")
+		box := StyleDashboardLogBox.Width(width - 2).Render(content)
+		box = insertBorderTitle(box, "Pods", StyleMuted)
+		return box
+	}
+
+	// Column widths
+	podCol := width - 36 // Remaining space for pod name
+	statusCol := 12
+	readyCol := 12
+
+	// Header
+	header := fmt.Sprintf(
+		"%s  %s  %s",
+		StyleDashboardPhaseHeader.Width(podCol).Render("Pod"),
+		StyleDashboardPhaseHeader.Width(statusCol).Render("Status"),
+		StyleDashboardPhaseHeader.Width(readyCol).Render("Ready"),
+	)
+
+	// Rows
+	var rows []string
+	rows = append(rows, header)
+	rows = append(rows, strings.Repeat("─", width-6))
+
+	readyCount := 0
+	for _, pod := range m.pods {
+		if pod.Ready {
+			readyCount++
+		}
+
+		// Format pod name (truncate if too long)
+		podName := pod.Name
+		if len(podName) > podCol {
+			podName = podName[:podCol-3] + "..."
+		}
+
+		// Format status
+		status := pod.Status
+		if len(status) > statusCol {
+			status = status[:statusCol-3] + "..."
+		}
+
+		// Format ready indicator
+		var readyStr string
+		if pod.Ready {
+			readyStr = StyleSuccess.Render(IconSuccess) + " Ready"
+		} else if pod.Status == "Failed" {
+			readyStr = StyleError.Render(IconError) + " Failed"
+		} else if pod.Status == "Pending" {
+			readyStr = IconPending + " Pending"
+		} else {
+			readyStr = m.spinner.View() + " Waiting"
+		}
+
+		row := fmt.Sprintf(
+			"%s  %s  %s",
+			lipgloss.NewStyle().Width(podCol).Render(podName),
+			lipgloss.NewStyle().Width(statusCol).Render(status),
+			lipgloss.NewStyle().Width(readyCol).Render(readyStr),
+		)
+		rows = append(rows, row)
+	}
+
+	// Add summary line
+	rows = append(rows, "")
+	summaryLine := StyleMuted.Render(fmt.Sprintf("%d/%d pods ready", readyCount, len(m.pods)))
+	rows = append(rows, summaryLine)
+
+	content := strings.Join(rows, "\n")
+	box := StyleDashboardLogBox.Width(width - 2).Render(content)
+	box = insertBorderTitle(box, "Pods", StyleMuted)
+
+	return box
+}
+
 // insertBorderTitle inserts a title into the top border of a box
 func insertBorderTitle(box, title string, style lipgloss.Style) string {
 	lines := strings.Split(box, "\n")
@@ -612,9 +713,14 @@ func (m DashboardModel) renderFooter(width int) string {
 	if m.verbose {
 		verboseKey = "[v] compact"
 	}
+	podsKey := "[p] pods"
+	if m.showPods {
+		podsKey = "[p] hide pods"
+	}
 	hotkeys := fmt.Sprintf(
-		"%s  %s",
+		"%s  %s  %s",
 		StyleDashboardHotkey.Render(verboseKey),
+		StyleDashboardHotkey.Render(podsKey),
 		StyleDashboardHotkey.Render("[q] quit"),
 	)
 
@@ -694,6 +800,13 @@ func (c *DashboardController) Log(line string) {
 	}
 }
 
+// UpdatePods updates the pods status display
+func (c *DashboardController) UpdatePods(pods []PodInfo) {
+	if c.program != nil {
+		c.program.Send(PodStatusUpdateMsg{Pods: pods})
+	}
+}
+
 // ExtendTimeout extends the timeout by the configured amount
 func (c *DashboardController) ExtendTimeout(newDeadline time.Time) {
 	if c.program != nil {
@@ -733,7 +846,7 @@ func RunBootstrapDashboard(
 	go func() {
 		err := workFn(model.state.Ctx, ctrl)
 		if err != nil {
-			if err == ErrCancelled {
+			if errors.Is(err, ErrCancelled) {
 				ctrl.Complete(false, "Bootstrap cancelled", err)
 			} else {
 				ctrl.Complete(false, "Bootstrap failed", err)
@@ -772,7 +885,7 @@ func runNonTTYBootstrap(
 
 	if err != nil {
 		result := BootstrapCompleteMsg{Success: false, Error: err}
-		if err == ErrCancelled {
+		if errors.Is(err, ErrCancelled) {
 			result.Message = "Bootstrap cancelled"
 		} else {
 			result.Message = "Bootstrap failed"

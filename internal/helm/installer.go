@@ -37,6 +37,29 @@ type ChartSpec struct {
 	Timeout     time.Duration
 }
 
+// ValuesLogger is called with the release name and final merged values before installation.
+// This can be used to display the values in logs or dashboard.
+type ValuesLogger func(releaseName string, values map[string]interface{})
+
+// ValuesTransformer allows modifying values after merging but before installation.
+// This is useful for injecting additional values programmatically.
+type ValuesTransformer func(values map[string]interface{}) map[string]interface{}
+
+// PreInstallFunc is called before chart installation.
+// It receives the kubeClient and namespace, allowing creation of resources
+// (e.g., ConfigMaps, Secrets) that the chart depends on.
+type PreInstallFunc func(ctx context.Context, kubeClient *kubernetes.Clientset, namespace string) error
+
+// InstallOptions provides optional callbacks for chart installation.
+type InstallOptions struct {
+	// ValuesTransformer is called after merging values to allow modification
+	ValuesTransformer ValuesTransformer
+	// ValuesLogger is called with the final values before installation
+	ValuesLogger ValuesLogger
+	// PreInstall is called before chart installation (after values are prepared)
+	PreInstall PreInstallFunc
+}
+
 // NewInstaller creates a new Helm installer
 func NewInstaller(kubeClient *kubernetes.Clientset) *Installer {
 	settings := cli.New()
@@ -248,6 +271,12 @@ func debugLog(format string, v ...interface{}) {
 
 // InstallChartFromConfig installs a Helm chart from a ChartConfig
 func (i *Installer) InstallChartFromConfig(ctx context.Context, chartCfg config.ChartConfig) error {
+	return i.InstallChartFromConfigWithOptions(ctx, chartCfg, InstallOptions{})
+}
+
+// InstallChartFromConfigWithOptions installs a Helm chart from a ChartConfig with optional callbacks.
+// This allows for value transformation, logging, and pre-install hooks.
+func (i *Installer) InstallChartFromConfigWithOptions(ctx context.Context, chartCfg config.ChartConfig, opts InstallOptions) error {
 	// Generate a unique repo name from the URL
 	repoName := GenerateRepoName(chartCfg.Repo)
 
@@ -260,6 +289,23 @@ func (i *Installer) InstallChartFromConfig(ctx context.Context, chartCfg config.
 	values, err := MergeValues(chartCfg.ValuesFiles, chartCfg.Values)
 	if err != nil {
 		return fmt.Errorf("failed to merge values: %w", err)
+	}
+
+	// Apply value transformer if provided
+	if opts.ValuesTransformer != nil {
+		values = opts.ValuesTransformer(values)
+	}
+
+	// Log values if logger provided
+	if opts.ValuesLogger != nil && len(values) > 0 {
+		opts.ValuesLogger(chartCfg.Name, values)
+	}
+
+	// Run pre-install hook if provided
+	if opts.PreInstall != nil {
+		if err := opts.PreInstall(ctx, i.kubeClient, chartCfg.Namespace); err != nil {
+			return fmt.Errorf("pre-install hook failed: %w", err)
+		}
 	}
 
 	// Parse timeout
@@ -287,6 +333,17 @@ func (i *Installer) InstallChartFromConfig(ctx context.Context, chartCfg config.
 
 	// Install with CreateNamespace option
 	return i.InstallWithOptions(ctx, spec, chartCfg.ShouldCreateNamespace())
+}
+
+// GetMergedValuesFromConfig returns the merged values for a chart config without installing.
+// This is useful for displaying values before installation or for validation.
+func (i *Installer) GetMergedValuesFromConfig(chartCfg config.ChartConfig) (map[string]interface{}, error) {
+	return MergeValues(chartCfg.ValuesFiles, chartCfg.Values)
+}
+
+// GetKubeClient returns the Kubernetes client used by this installer.
+func (i *Installer) GetKubeClient() *kubernetes.Clientset {
+	return i.kubeClient
 }
 
 // InstallWithOptions installs a Helm chart with additional options

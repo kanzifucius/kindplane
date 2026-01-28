@@ -150,6 +150,17 @@ type CrossplaneConfig struct {
 	RegistryCaBundle *RegistryCaBundleConfig `yaml:"registryCaBundle,omitempty"` // CA bundle for Crossplane registry access
 }
 
+// DefaultCrossplaneRepo is the default Helm repository URL for Crossplane
+const DefaultCrossplaneRepo = "https://charts.crossplane.io/stable"
+
+// GetRepo returns the Helm repository URL, defaulting to the official Crossplane repo
+func (c *CrossplaneConfig) GetRepo() string {
+	if c.Repo == "" {
+		return DefaultCrossplaneRepo
+	}
+	return c.Repo
+}
+
 // ProviderConfig defines a Crossplane provider
 type ProviderConfig struct {
 	Name    string `yaml:"name"`

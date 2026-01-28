@@ -102,15 +102,10 @@ func ResetNonTTYNotice() {
 	nonTTYNoticeOnce = sync.Once{}
 }
 
-// printNonTTYNotice prints a one-time notice that interactive UI is disabled
-func printNonTTYNotice() {
-	printNonTTYNoticeTo(defaultOutput)
-}
-
 // printNonTTYNoticeTo prints the notice to the specified writer
 func printNonTTYNoticeTo(w io.Writer) {
 	nonTTYNoticeOnce.Do(func() {
-		fmt.Fprintln(w, StyleMuted.Render("(non-interactive terminal detected, using static output)"))
+		_, _ = fmt.Fprintln(w, StyleMuted.Render("(non-interactive terminal detected, using static output)"))
 	})
 }
 
@@ -154,52 +149,52 @@ func NewNonTTYPrinter(title string, opts ...NonTTYPrinterOption) *NonTTYPrinter 
 		opt(p)
 	}
 	printNonTTYNoticeTo(p.output)
-	fmt.Fprintf(p.output, "%s %s\n", IconRunning, title)
+	_, _ = fmt.Fprintf(p.output, "%s %s\n", IconRunning, title)
 	return p
 }
 
 // Success prints a success completion message
 func (p *NonTTYPrinter) Success() {
-	fmt.Fprintf(p.output, "%s %s\n", IconSuccess, p.title)
+	_, _ = fmt.Fprintf(p.output, "%s %s\n", IconSuccess, p.title)
 }
 
 // SuccessWithMessage prints a success message with custom text
 func (p *NonTTYPrinter) SuccessWithMessage(msg string) {
-	fmt.Fprintf(p.output, "%s %s\n", IconSuccess, msg)
+	_, _ = fmt.Fprintf(p.output, "%s %s\n", IconSuccess, msg)
 }
 
 // Error prints an error completion message
 func (p *NonTTYPrinter) Error(err error) {
-	fmt.Fprintf(p.output, "%s %s: %v\n", IconError, p.title, err)
+	_, _ = fmt.Fprintf(p.output, "%s %s: %v\n", IconError, p.title, err)
 }
 
 // Cancelled prints a cancellation message
 func (p *NonTTYPrinter) Cancelled() {
-	fmt.Fprintf(p.output, "%s %s (cancelled)\n", IconWarning, p.title)
+	_, _ = fmt.Fprintf(p.output, "%s %s (cancelled)\n", IconWarning, p.title)
 }
 
 // Step prints an intermediate step with an icon
 func (p *NonTTYPrinter) Step(icon, format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(p.output, "  %s %s\n", icon, msg)
+	_, _ = fmt.Fprintf(p.output, "  %s %s\n", icon, msg)
 }
 
 // ItemProgress prints progress for an item (e.g., "  [1/5] item-name")
 func (p *NonTTYPrinter) ItemProgress(current, total int, item string) {
-	fmt.Fprintf(p.output, "  [%d/%d] %s\n", current, total, item)
+	_, _ = fmt.Fprintf(p.output, "  [%d/%d] %s\n", current, total, item)
 }
 
 // ItemDone prints a completed item
 func (p *NonTTYPrinter) ItemDone() {
-	fmt.Fprintf(p.output, "  %s Done\n", IconSuccess)
+	_, _ = fmt.Fprintf(p.output, "  %s Done\n", IconSuccess)
 }
 
 // ItemFailed prints a failed item
 func (p *NonTTYPrinter) ItemFailed(err error) {
-	fmt.Fprintf(p.output, "  %s Failed: %v\n", IconError, err)
+	_, _ = fmt.Fprintf(p.output, "  %s Failed: %v\n", IconError, err)
 }
 
 // Print outputs a plain message
 func (p *NonTTYPrinter) Print(format string, args ...interface{}) {
-	fmt.Fprintf(p.output, format+"\n", args...)
+	_, _ = fmt.Fprintf(p.output, format+"\n", args...)
 }

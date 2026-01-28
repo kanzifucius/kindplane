@@ -207,30 +207,30 @@ func (pt *PhaseTracker) AddPhaseIf(condition bool, name string) *Phase {
 func (pt *PhaseTracker) PrintHeader() {
 	output := pt.options.output
 
-	fmt.Fprintln(output)
-	fmt.Fprintln(output, Title(pt.options.icon+" "+pt.title))
-	fmt.Fprintln(output, Divider())
-	fmt.Fprintln(output)
+	_, _ = fmt.Fprintln(output)
+	_, _ = fmt.Fprintln(output, Title(pt.options.icon+" "+pt.title))
+	_, _ = fmt.Fprintln(output, Divider())
+	_, _ = fmt.Fprintln(output)
 
 	// Print cluster info if provided
 	if pt.options.clusterName != "" || pt.options.configFile != "" {
 		if pt.options.clusterName != "" {
-			fmt.Fprintln(output, KeyValue("Cluster", pt.options.clusterName))
+			_, _ = fmt.Fprintln(output, KeyValue("Cluster", pt.options.clusterName))
 		}
 		if pt.options.configFile != "" {
-			fmt.Fprintln(output, KeyValue("Config", pt.options.configFile))
+			_, _ = fmt.Fprintln(output, KeyValue("Config", pt.options.configFile))
 		}
-		fmt.Fprintln(output)
+		_, _ = fmt.Fprintln(output)
 	}
 
 	// Print upfront phase list
 	if pt.options.showUpfrontList && len(pt.phases) > 0 {
-		fmt.Fprintln(output, StyleBold.Render("Phases:"))
+		_, _ = fmt.Fprintln(output, StyleBold.Render("Phases:"))
 		for _, phase := range pt.phases {
 			icon := phase.Status.Icon()
-			fmt.Fprintf(output, "  %s %s\n", StyleMuted.Render(icon), phase.Name)
+			_, _ = fmt.Fprintf(output, "  %s %s\n", StyleMuted.Render(icon), phase.Name)
 		}
-		fmt.Fprintln(output)
+		_, _ = fmt.Fprintln(output)
 	}
 }
 
@@ -245,7 +245,7 @@ func (pt *PhaseTracker) StartPhase(name string) bool {
 
 			// Print phase header with [N/M] prefix
 			prefix := pt.formatPrefix()
-			fmt.Fprintf(pt.options.output, "%s %s\n", StyleBold.Render(prefix), phase.Name)
+			_, _ = fmt.Fprintf(pt.options.output, "%s %s\n", StyleBold.Render(prefix), phase.Name)
 			return true
 		}
 	}
@@ -258,7 +258,7 @@ func (pt *PhaseTracker) CompletePhase() {
 		phase := pt.phases[pt.current]
 		phase.Status = PhaseComplete
 		phase.EndTime = time.Now()
-		fmt.Fprintf(pt.options.output, "%s %s\n\n",
+		_, _ = fmt.Fprintf(pt.options.output, "%s %s\n\n",
 			StyleSuccess.Render(IconSuccess),
 			phase.Name)
 	}
@@ -269,13 +269,13 @@ func (pt *PhaseTracker) CompletePhaseWithMessage(message string) {
 	if pt.current >= 0 && pt.current < len(pt.phases) {
 		phase := pt.phases[pt.current]
 		phase.Status = PhaseComplete
-		fmt.Fprintf(pt.options.output, "%s %s\n",
+		_, _ = fmt.Fprintf(pt.options.output, "%s %s\n",
 			StyleSuccess.Render(IconSuccess),
 			phase.Name)
 		if message != "" {
-			fmt.Fprintf(pt.options.output, "  %s\n", StyleMuted.Render(message))
+			_, _ = fmt.Fprintf(pt.options.output, "  %s\n", StyleMuted.Render(message))
 		}
-		fmt.Fprintln(pt.options.output)
+		_, _ = fmt.Fprintln(pt.options.output)
 	}
 }
 
@@ -357,8 +357,8 @@ func (pt *PhaseTracker) SkipPhase(name string, reason string) bool {
 
 			// Print skip message
 			prefix := pt.formatPrefix()
-			fmt.Fprintf(pt.options.output, "%s %s\n", StyleBold.Render(prefix), phase.Name)
-			fmt.Fprintf(pt.options.output, "  %s Skipped (%s)\n\n",
+			_, _ = fmt.Fprintf(pt.options.output, "%s %s\n", StyleBold.Render(prefix), phase.Name)
+			_, _ = fmt.Fprintf(pt.options.output, "  %s Skipped (%s)\n\n",
 				StyleWarning.Render(IconWarning),
 				reason)
 			return true
@@ -373,7 +373,7 @@ func (pt *PhaseTracker) FailPhase(err error) {
 		phase := pt.phases[pt.current]
 		phase.Status = PhaseFailed
 		phase.Error = err
-		fmt.Fprintf(pt.options.output, "%s %s failed: %v\n\n",
+		_, _ = fmt.Fprintf(pt.options.output, "%s %s failed: %v\n\n",
 			StyleError.Render(IconError),
 			phase.Name,
 			err)
@@ -384,8 +384,8 @@ func (pt *PhaseTracker) FailPhase(err error) {
 func (pt *PhaseTracker) PrintSummary() {
 	output := pt.options.output
 
-	fmt.Fprintln(output)
-	fmt.Fprintln(output, StyleBold.Render("Summary:"))
+	_, _ = fmt.Fprintln(output)
+	_, _ = fmt.Fprintln(output, StyleBold.Render("Summary:"))
 
 	for _, phase := range pt.phases {
 		var icon, status string
@@ -406,27 +406,27 @@ func (pt *PhaseTracker) PrintSummary() {
 			icon = StyleMuted.Render(IconPending)
 			status = fmt.Sprintf("%s (not started)", phase.Name)
 		}
-		fmt.Fprintf(output, "  %s %s\n", icon, status)
+		_, _ = fmt.Fprintf(output, "  %s %s\n", icon, status)
 	}
-	fmt.Fprintln(output)
+	_, _ = fmt.Fprintln(output)
 }
 
 // PrintSuccess prints the final success message
 func (pt *PhaseTracker) PrintSuccess(message string) {
 	output := pt.options.output
-	fmt.Fprintln(output, Divider())
-	fmt.Fprintf(output, "%s %s\n", StyleSuccess.Render(IconSuccess), StyleBold.Render(message))
+	_, _ = fmt.Fprintln(output, Divider())
+	_, _ = fmt.Fprintf(output, "%s %s\n", StyleSuccess.Render(IconSuccess), StyleBold.Render(message))
 }
 
 // PrintSuccessWithHint prints the final success message with a hint command
 func (pt *PhaseTracker) PrintSuccessWithHint(message, hint string) {
 	output := pt.options.output
-	fmt.Fprintln(output, Divider())
-	fmt.Fprintf(output, "%s %s\n\n", StyleSuccess.Render(IconSuccess), StyleBold.Render(message))
+	_, _ = fmt.Fprintln(output, Divider())
+	_, _ = fmt.Fprintf(output, "%s %s\n\n", StyleSuccess.Render(IconSuccess), StyleBold.Render(message))
 	if hint != "" {
-		fmt.Fprintf(output, "  %s\n", Code(hint))
+		_, _ = fmt.Fprintf(output, "  %s\n", Code(hint))
 	}
-	fmt.Fprintln(output)
+	_, _ = fmt.Fprintln(output)
 }
 
 // -----------------------------------------------------------------------------

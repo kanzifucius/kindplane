@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -40,6 +42,7 @@ var (
 	upSkipCompositions  bool
 	upTimeout           time.Duration
 	upRollbackOnFailure bool
+	upShowValues        bool
 )
 
 var upCmd = &cobra.Command{
@@ -81,6 +84,7 @@ func init() {
 	upCmd.Flags().BoolVar(&upSkipCompositions, "skip-compositions", false, "skip applying compositions")
 	upCmd.Flags().DurationVar(&upTimeout, "timeout", 10*time.Minute, "timeout for the entire operation")
 	upCmd.Flags().BoolVar(&upRollbackOnFailure, "rollback-on-failure", false, "delete cluster if bootstrap fails")
+	upCmd.Flags().BoolVar(&upShowValues, "show-values", false, "display merged Helm values before installation")
 }
 
 // bootstrapContext holds shared resources during bootstrap
@@ -198,6 +202,37 @@ func runUpPrint(pt *ui.PhaseTracker) error {
 	// Success!
 	pt.PrintSuccessWithHint("Cluster ready!", fmt.Sprintf("kubectl cluster-info --context %s", cfg.GetKubeContext()))
 	return nil
+}
+
+// createValuesLogger creates a ValuesLogger based on the current mode.
+// If upShowValues is false, returns nil (no logging).
+// If ctrl is non-nil (dashboard mode), logs to the dashboard log buffer.
+// Otherwise (print mode), prints to stdout with styled output.
+func createValuesLogger(ctrl *ui.DashboardController) helm.ValuesLogger {
+	if !upShowValues {
+		return nil
+	}
+
+	return func(releaseName string, values map[string]interface{}) {
+		valuesYAML, err := yaml.Marshal(values)
+		if err != nil {
+			return
+		}
+
+		if ctrl != nil {
+			// Dashboard mode: add to log buffer
+			ctrl.Log(fmt.Sprintf("Merged values for %s:", releaseName))
+			for _, line := range strings.Split(string(valuesYAML), "\n") {
+				if line != "" {
+					ctrl.Log("  " + line)
+				}
+			}
+		} else {
+			// Print mode: styled output
+			fmt.Println(ui.Info("Merged values for %s:", releaseName))
+			fmt.Println(ui.Code(string(valuesYAML)))
+		}
+	}
 }
 
 // executeBootstrap performs the actual bootstrap operations
@@ -368,6 +403,22 @@ func executeBootstrap(ctx context.Context, pt *ui.PhaseTracker, ctrl *ui.Dashboa
 		}
 		clusterCreated = true
 		completePhase(phaseCluster, "")
+
+		// Update system CA certificates if workload CAs are configured
+		if len(cfg.Cluster.TrustedCAs.Workloads) > 0 {
+			updateOp("Updating system CA certificates on nodes...", -1)
+			var updateCAErr error
+			if ctrl != nil {
+				updateCAErr = kind.UpdateCACertificates(ctx, cfg.Cluster.Name)
+			} else {
+				updateCAErr = ui.RunSpinnerWithContext(ctx, "Updating system CA certificates on nodes", func(spinnerCtx context.Context) error {
+					return kind.UpdateCACertificates(spinnerCtx, cfg.Cluster.Name)
+				})
+			}
+			if updateCAErr != nil {
+				return handleFailure(phaseCluster, fmt.Errorf("failed to update CA certificates: %w", updateCAErr))
+			}
+		}
 	}
 
 	// Configure registry for cluster nodes if enabled
@@ -475,6 +526,9 @@ func executeBootstrap(ctx context.Context, pt *ui.PhaseTracker, ctrl *ui.Dashboa
 			repoName = helm.GenerateRepoName(repoURL)
 		}
 
+		// Create values logger for displaying merged values
+		valuesLogger := createValuesLogger(ctrl)
+
 		// Build installation steps
 		steps := []string{
 			"Adding Helm repository",
@@ -501,7 +555,10 @@ func executeBootstrap(ctx context.Context, pt *ui.PhaseTracker, ctrl *ui.Dashboa
 				case "Creating registry CA bundle":
 					installErr = installer.CreateRegistryCaBundle(ctx, crossplaneCfg.RegistryCaBundle, cfg.Cluster.TrustedCAs.Workloads)
 				case "Installing Helm chart":
-					installErr = installer.InstallHelmChart(ctx, crossplaneCfg, repoURL, repoName)
+					opts := helm.InstallOptions{
+						ValuesLogger: valuesLogger,
+					}
+					installErr = installer.InstallHelmChartWithOptions(ctx, crossplaneCfg, repoURL, repoName, opts)
 				}
 				if installErr != nil {
 					break
@@ -518,7 +575,10 @@ func executeBootstrap(ctx context.Context, pt *ui.PhaseTracker, ctrl *ui.Dashboa
 				case "Creating registry CA bundle":
 					return installer.CreateRegistryCaBundle(stepCtx, crossplaneCfg.RegistryCaBundle, cfg.Cluster.TrustedCAs.Workloads)
 				case "Installing Helm chart":
-					return installer.InstallHelmChart(stepCtx, crossplaneCfg, repoURL, repoName)
+					opts := helm.InstallOptions{
+						ValuesLogger: valuesLogger,
+					}
+					return installer.InstallHelmChartWithOptions(stepCtx, crossplaneCfg, repoURL, repoName, opts)
 				default:
 					return fmt.Errorf("unknown installation step: %s", step)
 				}
@@ -689,6 +749,18 @@ func waitForCrossplanePods(ctx context.Context, installer *crossplane.Installer,
 				continue
 			}
 
+			// Convert to ui.PodInfo and send update
+			uiPods := make([]ui.PodInfo, len(podInfos))
+			for i, p := range podInfos {
+				uiPods[i] = ui.PodInfo{
+					Name:    p.Name,
+					Status:  p.Status,
+					Ready:   p.Ready,
+					Message: p.Message,
+				}
+			}
+			ctrl.UpdatePods(uiPods)
+
 			// Log current status
 			for _, p := range podInfos {
 				if !p.Ready {
@@ -719,10 +791,31 @@ func waitForProviders(ctx context.Context, installer *crossplane.Installer, ctrl
 				continue
 			}
 
+			// Convert provider statuses to PodInfo for display
+			uiPods := make([]ui.PodInfo, len(statuses))
 			allHealthy := true
-			for _, s := range statuses {
+			for i, s := range statuses {
+				status := "Pending"
+				if s.Healthy {
+					status = "Running"
+				} else if s.Message != "" {
+					status = "Installing"
+				}
+				uiPods[i] = ui.PodInfo{
+					Name:    s.Name,
+					Status:  status,
+					Ready:   s.Healthy,
+					Message: s.Message,
+				}
 				if !s.Healthy {
 					allHealthy = false
+				}
+			}
+			ctrl.UpdatePods(uiPods)
+
+			// Update operation status
+			for _, s := range statuses {
+				if !s.Healthy {
 					ctrl.UpdateOperation(fmt.Sprintf("Waiting for %s...", s.Name), -1)
 					break
 				}
@@ -750,6 +843,9 @@ func installChartsForPhaseWithTracker(ctx context.Context, helmInstaller *helm.I
 		pt.StartPhase(phaseName)
 	}
 
+	// Create values logger for displaying merged values
+	valuesLogger := createValuesLogger(ctrl)
+
 	// Build chart names for progress display
 	chartNames := make([]string, len(charts))
 	chartMap := make(map[string]config.ChartConfig)
@@ -762,12 +858,17 @@ func installChartsForPhaseWithTracker(ctx context.Context, helmInstaller *helm.I
 	var failedChart config.ChartConfig
 	var installErr error
 
+	// Create install options with values logger
+	opts := helm.InstallOptions{
+		ValuesLogger: valuesLogger,
+	}
+
 	if ctrl != nil {
 		// Dashboard mode: install with updates
 		for i, name := range chartNames {
 			ctrl.UpdateOperation(fmt.Sprintf("Installing %s...", name), float64(i)/float64(len(chartNames)))
 			chart := chartMap[name]
-			if err := helmInstaller.InstallChartFromConfig(ctx, chart); err != nil {
+			if err := helmInstaller.InstallChartFromConfigWithOptions(ctx, chart, opts); err != nil {
 				failedChart = chart
 				installErr = err
 				break
@@ -778,7 +879,7 @@ func installChartsForPhaseWithTracker(ctx context.Context, helmInstaller *helm.I
 		title := fmt.Sprintf("Installing %s charts", phase)
 		installErr = ui.RunProgress(title, chartNames, func(name string) error {
 			chart := chartMap[name]
-			if err := helmInstaller.InstallChartFromConfig(ctx, chart); err != nil {
+			if err := helmInstaller.InstallChartFromConfigWithOptions(ctx, chart, opts); err != nil {
 				failedChart = chart
 				return err
 			}

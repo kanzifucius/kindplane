@@ -234,16 +234,16 @@ func RunProgressWithContext(parentCtx context.Context, title string, items []str
 
 	final := finalModel.(progressModel)
 	if final.cancelled {
-		fmt.Fprintln(output, StyleWarning.Render(IconWarning)+" "+title+" (cancelled)")
+		_, _ = fmt.Fprintln(output, StyleWarning.Render(IconWarning)+" "+title+" (cancelled)")
 		return ErrCancelled
 	}
 
 	if final.err != nil {
-		fmt.Fprintln(output, StyleError.Render(IconError)+" "+title+" failed")
+		_, _ = fmt.Fprintln(output, StyleError.Render(IconError)+" "+title+" failed")
 		return final.err
 	}
 
-	fmt.Fprintln(output, StyleSuccess.Render(IconSuccess)+" "+title+" complete")
+	_, _ = fmt.Fprintln(output, StyleSuccess.Render(IconSuccess)+" "+title+" complete")
 	return nil
 }
 

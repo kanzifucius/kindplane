@@ -26,6 +26,9 @@ const (
 	ResourceTypeSecrets      ResourceType = "secrets"
 	ResourceTypeConfigMaps   ResourceType = "configmaps"
 	ResourceTypeHelmReleases ResourceType = "helmreleases"
+
+	// Local configuration (not from cluster)
+	ResourceTypeKindConfig ResourceType = "kindconfig"
 )
 
 // ResourceInfo contains information about a resource type for dumping

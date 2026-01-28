@@ -275,19 +275,19 @@ func RunPodTable(parentCtx context.Context, title string, pollFn func(ctx contex
 
 	final := finalModel.(podTableModel)
 	if final.cancelled {
-		fmt.Fprintln(output, StyleWarning.Render(IconWarning)+" "+title+" (cancelled)")
+		_, _ = fmt.Fprintln(output, StyleWarning.Render(IconWarning)+" "+title+" (cancelled)")
 		return ErrCancelled
 	}
 
 	if final.err != nil {
-		fmt.Fprintln(output, StyleError.Render(IconError)+" "+title)
+		_, _ = fmt.Fprintln(output, StyleError.Render(IconError)+" "+title)
 		return final.err
 	}
 
 	// Print final success state with all pods
-	fmt.Fprintln(output, StyleSuccess.Render(IconSuccess)+" "+title)
+	_, _ = fmt.Fprintln(output, StyleSuccess.Render(IconSuccess)+" "+title)
 	for _, p := range final.pods {
-		fmt.Fprintf(output, "  %s %s: %s\n", StyleSuccess.Render(IconSuccess), p.Name, p.Status)
+		_, _ = fmt.Fprintf(output, "  %s %s: %s\n", StyleSuccess.Render(IconSuccess), p.Name, p.Status)
 	}
 
 	return nil
@@ -296,7 +296,7 @@ func RunPodTable(parentCtx context.Context, title string, pollFn func(ctx contex
 // runPodTableNonTTY handles non-TTY fallback for pod table
 func runPodTableNonTTY(parentCtx context.Context, title string, pollFn func(ctx context.Context) ([]PodInfo, bool, error), output io.Writer, pollInterval time.Duration) error {
 	printNonTTYNoticeTo(output)
-	fmt.Fprintf(output, "%s %s\n", IconRunning, title)
+	_, _ = fmt.Fprintf(output, "%s %s\n", IconRunning, title)
 
 	// Poll until all ready or error
 	for {
@@ -306,7 +306,7 @@ func runPodTableNonTTY(parentCtx context.Context, title string, pollFn func(ctx 
 		default:
 			pods, allReady, err := pollFn(parentCtx)
 			if err != nil {
-				fmt.Fprintf(output, "%s %s: %v\n", IconError, title, err)
+				_, _ = fmt.Fprintf(output, "%s %s: %v\n", IconError, title, err)
 				return err
 			}
 
@@ -322,15 +322,15 @@ func runPodTableNonTTY(parentCtx context.Context, title string, pollFn func(ctx 
 				} else if p.Status == "Pending" {
 					icon = IconPending
 				}
-				fmt.Fprintf(output, "  %s %s: %s", icon, p.Name, status)
+				_, _ = fmt.Fprintf(output, "  %s %s: %s", icon, p.Name, status)
 				if p.Message != "" {
-					fmt.Fprintf(output, " (%s)", p.Message)
+					_, _ = fmt.Fprintf(output, " (%s)", p.Message)
 				}
-				fmt.Fprintln(output)
+				_, _ = fmt.Fprintln(output)
 			}
 
 			if allReady {
-				fmt.Fprintf(output, "%s %s\n", IconSuccess, title)
+				_, _ = fmt.Fprintf(output, "%s %s\n", IconSuccess, title)
 				return nil
 			}
 

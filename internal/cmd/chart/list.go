@@ -93,7 +93,7 @@ func runList(cmd *cobra.Command, args []string) error {
 			updated = rel.Updated.Format("2006-01-02 15:04:05")
 		}
 
-		status := rel.Status
+		var status string
 		if rel.Status == "deployed" {
 			status = ui.IconSuccess + " deployed"
 		} else {

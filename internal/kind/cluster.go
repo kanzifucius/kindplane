@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
+	"strings"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -132,4 +134,42 @@ func GetRESTConfig(clusterName string) (*rest.Config, error) {
 	}
 
 	return config, nil
+}
+
+// GetNodeContainers returns the Docker container names for all nodes in a Kind cluster
+func GetNodeContainers(clusterName string) ([]string, error) {
+	// Kind uses the naming convention: <cluster-name>-control-plane, <cluster-name>-worker, etc.
+	cmd := exec.Command("docker", "ps", "--filter", fmt.Sprintf("label=io.x-k8s.kind.cluster=%s", clusterName), "--format", "{{.Names}}")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list cluster containers: %w", err)
+	}
+
+	nodes := []string{}
+	for _, name := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		if name != "" {
+			nodes = append(nodes, name)
+		}
+	}
+
+	return nodes, nil
+}
+
+// UpdateCACertificates runs update-ca-certificates on all nodes in the cluster
+// to regenerate the system CA bundle with any mounted CA certificates.
+// This should be called after cluster creation when workload CAs are configured.
+func UpdateCACertificates(ctx context.Context, clusterName string) error {
+	nodes, err := GetNodeContainers(clusterName)
+	if err != nil {
+		return fmt.Errorf("failed to get cluster nodes: %w", err)
+	}
+
+	for _, node := range nodes {
+		cmd := exec.CommandContext(ctx, "docker", "exec", node, "update-ca-certificates")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to update CA certificates on node %s: %w\nOutput: %s", node, err, string(output))
+		}
+	}
+
+	return nil
 }

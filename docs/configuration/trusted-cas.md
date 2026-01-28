@@ -91,15 +91,11 @@ cluster:
 
 When you configure workload CAs, kindplane:
 
-1. Mounts each CA certificate file into the Kind nodes at `/etc/ssl/certs/extra/<name>.crt`
-2. Applications running in the cluster can then reference these certificates
+1. Mounts each CA certificate file into the Kind nodes at `/usr/local/share/ca-certificates/<name>.crt`
+2. Runs `update-ca-certificates` on each node after cluster creation to add the CAs to the system trust store
+3. Applications running in the cluster automatically trust these CAs without additional configuration
 
-!!! note "Application Configuration Required"
-    Mounting the CA certificates makes them available on the nodes, but applications may need additional configuration to use them. Common approaches include:
-    
-    - Setting the `SSL_CERT_DIR` or `SSL_CERT_FILE` environment variables
-    - Configuring application-specific CA bundle paths
-    - Using init containers to update the system CA bundle
+This means workload CAs are trusted system-wide by all applications that use the system CA bundle (e.g., curl, wget, most language runtimes).
 
 ## Complete Example
 
@@ -153,8 +149,11 @@ To verify certificates are mounted correctly:
 # Check registry CAs
 docker exec -it <node-container> ls -la /etc/containerd/certs.d/
 
-# Check workload CAs
-docker exec -it <node-container> ls -la /etc/ssl/certs/extra/
+# Check workload CAs (source files)
+docker exec -it <node-container> ls -la /usr/local/share/ca-certificates/
+
+# Check system CA bundle includes your CAs
+docker exec -it <node-container> grep -l "your-ca-subject" /etc/ssl/certs/
 ```
 
 ### Containerd Configuration

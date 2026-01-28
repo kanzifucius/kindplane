@@ -176,16 +176,16 @@ func RunSpinnerWithContext(parentCtx context.Context, title string, fn func(ctx 
 
 	final := finalModel.(spinnerModel)
 	if final.cancelled {
-		fmt.Fprintln(output, StyleWarning.Render(IconWarning)+" "+title+" (cancelled)")
+		_, _ = fmt.Fprintln(output, StyleWarning.Render(IconWarning)+" "+title+" (cancelled)")
 		return ErrCancelled
 	}
 
 	if final.err != nil {
-		fmt.Fprintln(output, StyleError.Render(IconError)+" "+title)
+		_, _ = fmt.Fprintln(output, StyleError.Render(IconError)+" "+title)
 		return final.err
 	}
 
-	fmt.Fprintln(output, StyleSuccess.Render(IconSuccess)+" "+title)
+	_, _ = fmt.Fprintln(output, StyleSuccess.Render(IconSuccess)+" "+title)
 	return nil
 }
 

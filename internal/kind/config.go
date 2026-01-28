@@ -266,8 +266,9 @@ func buildCAMounts(cfg *config.Config) []KindMount {
 			absPath = wl.CAFile
 		}
 
-		// Mount to extra certs directory for workloads
-		containerPath := fmt.Sprintf("/etc/ssl/certs/extra/%s.crt", wl.Name)
+		// Mount to system CA certificates directory for automatic trust
+		// After cluster creation, update-ca-certificates must be run on each node
+		containerPath := fmt.Sprintf("/usr/local/share/ca-certificates/%s.crt", wl.Name)
 		mounts = append(mounts, KindMount{
 			HostPath:      absPath,
 			ContainerPath: containerPath,

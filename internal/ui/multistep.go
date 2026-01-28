@@ -299,21 +299,21 @@ func RunMultiStep(parentCtx context.Context, title string, fn func(ctx context.C
 
 	final := finalModel.(multiStepModel)
 	if final.cancelled {
-		fmt.Fprintln(output, StyleWarning.Render(IconWarning)+" "+title+" (cancelled)")
+		_, _ = fmt.Fprintln(output, StyleWarning.Render(IconWarning)+" "+title+" (cancelled)")
 		return ErrCancelled
 	}
 
 	if final.err != nil {
-		fmt.Fprintln(output, StyleError.Render(IconError)+" "+title)
+		_, _ = fmt.Fprintln(output, StyleError.Render(IconError)+" "+title)
 		return final.err
 	}
 
 	// Print final success state with all completed steps
-	fmt.Fprintln(output, StyleSuccess.Render(IconSuccess)+" "+title)
+	_, _ = fmt.Fprintln(output, StyleSuccess.Render(IconSuccess)+" "+title)
 	for _, stepName := range final.stepOrder {
 		step := final.steps[stepName]
 		if step.Status == StepComplete {
-			fmt.Fprintf(output, "  %s %s\n", StyleSuccess.Render(IconSuccess), step.Name)
+			_, _ = fmt.Fprintf(output, "  %s %s\n", StyleSuccess.Render(IconSuccess), step.Name)
 		}
 	}
 
@@ -323,7 +323,7 @@ func RunMultiStep(parentCtx context.Context, title string, fn func(ctx context.C
 // runMultiStepNonTTY handles non-TTY fallback for multi-step operations
 func runMultiStepNonTTY(parentCtx context.Context, title string, fn func(ctx context.Context, updates chan<- StepUpdate) error, output io.Writer) error {
 	printNonTTYNoticeTo(output)
-	fmt.Fprintf(output, "%s %s...\n", IconRunning, title)
+	_, _ = fmt.Fprintf(output, "%s %s...\n", IconRunning, title)
 
 	updates := make(chan StepUpdate, 10)
 	ctx, cancel := context.WithCancel(parentCtx)
@@ -350,15 +350,15 @@ func runMultiStepNonTTY(parentCtx context.Context, title string, fn func(ctx con
 			for update := range updates {
 				if update.Done {
 					if update.Success {
-						fmt.Fprintf(output, "  %s %s\n", IconSuccess, update.Step)
+						_, _ = fmt.Fprintf(output, "  %s %s\n", IconSuccess, update.Step)
 					} else {
-						fmt.Fprintf(output, "  %s %s\n", IconError, update.Step)
+						_, _ = fmt.Fprintf(output, "  %s %s\n", IconError, update.Step)
 					}
 				} else {
-					fmt.Fprintf(output, "  %s %s...\n", IconRunning, update.Step)
+					_, _ = fmt.Fprintf(output, "  %s %s...\n", IconRunning, update.Step)
 				}
 			}
-			fmt.Fprintf(output, "%s %s complete\n", IconSuccess, title)
+			_, _ = fmt.Fprintf(output, "%s %s complete\n", IconSuccess, title)
 			return nil
 		case update, ok := <-updates:
 			if !ok {
@@ -369,16 +369,16 @@ func runMultiStepNonTTY(parentCtx context.Context, title string, fn func(ctx con
 			if update.Done {
 				if update.Success {
 					if !steps[stepName] {
-						fmt.Fprintf(output, "  %s %s\n", IconSuccess, stepName)
+						_, _ = fmt.Fprintf(output, "  %s %s\n", IconSuccess, stepName)
 						steps[stepName] = true
 					}
 				} else {
-					fmt.Fprintf(output, "  %s %s\n", IconError, stepName)
+					_, _ = fmt.Fprintf(output, "  %s %s\n", IconError, stepName)
 					return fmt.Errorf("step failed: %s", stepName)
 				}
 			} else {
 				if !steps[stepName] {
-					fmt.Fprintf(output, "  %s %s...\n", IconRunning, stepName)
+					_, _ = fmt.Fprintf(output, "  %s %s...\n", IconRunning, stepName)
 					steps[stepName] = true
 				}
 			}

@@ -133,23 +133,7 @@ func (i *Installer) AddHelmRepo(ctx context.Context, repoName, repoURL string) e
 
 // EnsureNamespace ensures the Crossplane namespace exists
 func (i *Installer) EnsureNamespace(ctx context.Context) error {
-	_, err := i.kubeClient.CoreV1().Namespaces().Get(ctx, CrossplaneNamespace, metav1.GetOptions{})
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			// Namespace doesn't exist, create it
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: CrossplaneNamespace,
-				},
-			}
-			if _, err := i.kubeClient.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{}); err != nil {
-				return fmt.Errorf("failed to create namespace %s: %w", CrossplaneNamespace, err)
-			}
-		} else {
-			return fmt.Errorf("failed to check namespace %s: %w", CrossplaneNamespace, err)
-		}
-	}
-	return nil
+	return helm.EnsureNamespace(ctx, i.kubeClient, CrossplaneNamespace)
 }
 
 // CreateRegistryCaBundle creates the registry CA bundle ConfigMap if configured
@@ -161,38 +145,48 @@ func (i *Installer) CreateRegistryCaBundle(ctx context.Context, rcb *config.Regi
 }
 
 // InstallHelmChart installs the Crossplane Helm chart
+// Deprecated: Use InstallHelmChartWithOptions for more control over the installation process.
 func (i *Installer) InstallHelmChart(ctx context.Context, cfg config.CrossplaneConfig, repoURL, repoName string) error {
-	// Merge values from files and inline values
-	values, err := helm.MergeValues(cfg.ValuesFiles, cfg.Values)
-	if err != nil {
-		return fmt.Errorf("failed to merge crossplane values: %w", err)
-	}
+	return i.InstallHelmChartWithOptions(ctx, cfg, repoURL, repoName, helm.InstallOptions{})
+}
 
-	// Inject registryCaBundleConfig Helm values if configured
-	if cfg.RegistryCaBundle != nil {
-		if values == nil {
-			values = make(map[string]interface{})
-		}
-		values["registryCaBundleConfig"] = map[string]interface{}{
-			"name": RegistryCaBundleConfigMapName,
-			"key":  RegistryCaBundleConfigMapKey,
-		}
-	}
-
-	// Install Crossplane chart
-	spec := helm.ChartSpec{
-		RepoURL:     repoURL,
-		RepoName:    repoName,
-		ChartName:   CrossplaneChartName,
-		ReleaseName: "crossplane",
-		Namespace:   CrossplaneNamespace,
+// InstallHelmChartWithOptions installs the Crossplane Helm chart with optional callbacks.
+// The opts parameter allows for value transformation, logging, and pre-install hooks.
+// Note: This method automatically injects registryCaBundleConfig values if cfg.RegistryCaBundle is set.
+func (i *Installer) InstallHelmChartWithOptions(ctx context.Context, cfg config.CrossplaneConfig, repoURL, repoName string, opts helm.InstallOptions) error {
+	// Build ChartConfig from CrossplaneConfig
+	chartCfg := config.ChartConfig{
+		Name:        "crossplane",
+		Repo:        repoURL,
+		Chart:       CrossplaneChartName,
 		Version:     cfg.Version,
-		Wait:        true,
-		Timeout:     5 * time.Minute,
-		Values:      values,
+		Namespace:   CrossplaneNamespace,
+		Values:      cfg.Values,
+		ValuesFiles: cfg.ValuesFiles,
 	}
 
-	if err := i.helmInstaller.Install(ctx, spec); err != nil {
+	// Wrap the provided transformer to also inject registryCaBundleConfig
+	originalTransformer := opts.ValuesTransformer
+	opts.ValuesTransformer = func(values map[string]interface{}) map[string]interface{} {
+		// Apply original transformer first if provided
+		if originalTransformer != nil {
+			values = originalTransformer(values)
+		}
+		// Inject registryCaBundleConfig if configured
+		if cfg.RegistryCaBundle != nil {
+			if values == nil {
+				values = make(map[string]interface{})
+			}
+			values["registryCaBundleConfig"] = map[string]interface{}{
+				"name": RegistryCaBundleConfigMapName,
+				"key":  RegistryCaBundleConfigMapKey,
+			}
+		}
+		return values
+	}
+
+	// Use the helm installer with options
+	if err := i.helmInstaller.InstallChartFromConfigWithOptions(ctx, chartCfg, opts); err != nil {
 		return fmt.Errorf("failed to install crossplane: %w", err)
 	}
 
@@ -201,6 +195,7 @@ func (i *Installer) InstallHelmChart(ctx context.Context, cfg config.CrossplaneC
 
 // createRegistryCaBundleConfigMap creates a ConfigMap containing the CA bundle for Crossplane registry access
 // Multiple CA certificates are bundled together into a single PEM file
+// Note: The namespace must already exist before calling this function.
 func (i *Installer) createRegistryCaBundleConfigMap(ctx context.Context, rcb *config.RegistryCaBundleConfig, workloadCAs []config.WorkloadCA) error {
 	// Resolve all CA file paths
 	caFilePaths, err := rcb.ResolveCAFiles(workloadCAs)
@@ -220,24 +215,6 @@ func (i *Installer) createRegistryCaBundleConfigMap(ctx context.Context, rcb *co
 			caContent = append(caContent, '\n')
 		}
 		bundledCerts = append(bundledCerts, caContent...)
-	}
-
-	// Ensure the namespace exists
-	_, err = i.kubeClient.CoreV1().Namespaces().Get(ctx, CrossplaneNamespace, metav1.GetOptions{})
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			// Namespace doesn't exist, create it
-			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: CrossplaneNamespace,
-				},
-			}
-			if _, err := i.kubeClient.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{}); err != nil {
-				return fmt.Errorf("failed to create namespace %s: %w", CrossplaneNamespace, err)
-			}
-		} else {
-			return fmt.Errorf("failed to check namespace %s: %w", CrossplaneNamespace, err)
-		}
 	}
 
 	// Create or update the ConfigMap
@@ -294,12 +271,12 @@ func (i *Installer) WaitForReady(ctx context.Context) error {
 			checkCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 			ready, err := i.isReady(checkCtx)
 			cancel()
-			
+
 			// If context was cancelled, return immediately
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			
+
 			if err != nil {
 				continue // Keep trying
 			}
@@ -337,7 +314,7 @@ func (i *Installer) isReady(ctx context.Context) (bool, error) {
 		if ctx.Err() != nil {
 			return false, ctx.Err()
 		}
-		
+
 		for _, cond := range pod.Status.Conditions {
 			if cond.Type == "Ready" && cond.Status != "True" {
 				return false, nil

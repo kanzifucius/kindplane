@@ -193,7 +193,7 @@ func TestRunSpinner_NonTTY_Error(t *testing.T) {
 		return expectedErr
 	}, WithSpinnerOutput(buf))
 
-	if err != expectedErr {
+	if !errors.Is(err, expectedErr) {
 		t.Errorf("expected error %v, got: %v", expectedErr, err)
 	}
 
@@ -282,7 +282,7 @@ func TestRunProgress_NonTTY_FailsOnFirstError(t *testing.T) {
 		return nil
 	}, WithProgressOutput(buf))
 
-	if err != expectedErr {
+	if !errors.Is(err, expectedErr) {
 		t.Errorf("expected error %v, got: %v", expectedErr, err)
 	}
 }

@@ -264,7 +264,7 @@ func RunTableSelect(headers []string, rows [][]string, opts ...TableOption) (int
 	if !IsTTY() {
 		// Fallback: just print the table, return first row
 		printNonTTYNoticeTo(output)
-		fmt.Fprintln(output, RenderTable(headers, rows, opts...))
+		_, _ = fmt.Fprintln(output, RenderTable(headers, rows, opts...))
 		if len(rows) > 0 {
 			return 0, nil
 		}
