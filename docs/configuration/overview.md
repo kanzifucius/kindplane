@@ -24,7 +24,7 @@ The configuration file has the following top-level sections:
 cluster:      # Kind cluster configuration
 crossplane:   # Crossplane installation settings
 credentials:  # Cloud provider credentials
-charts:       # Helm charts to install (including ESO if needed)
+charts:       # Helm charts to install
 compositions: # Crossplane compositions to apply
 ```
 
@@ -158,11 +158,13 @@ compositions:
 | Section | Description | Required |
 |---------|-------------|----------|
 | [cluster](cluster.md) | Kind cluster settings | Yes |
+| [cluster.registry](cluster.md#registry) | Local container registry | No |
 | [cluster.trustedCAs](trusted-cas.md) | Trusted CA certificates | No |
 | [crossplane](crossplane.md) | Crossplane installation | Yes |
+| [crossplane.providers](providers.md) | Crossplane providers | No |
 | [credentials](credentials.md) | Cloud provider credentials | No |
 | [charts](charts.md) | Helm charts to install | No |
 | [compositions](compositions.md) | Crossplane compositions | No |
 
 !!! note "External Secrets Operator"
-    ESO can be installed via the `charts` section. See the [ESO installation guide](eso.md) for details.
+    ESO can be installed via the `charts` section. See the [ESO guide](eso.md) for details.

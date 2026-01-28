@@ -14,6 +14,7 @@ kindplane provider <command> [flags]
 |---------|-------------|
 | `list` | List installed providers |
 | `add` | Add a new provider |
+| `remove` | Remove a provider |
 
 ## kindplane provider list
 
@@ -89,6 +90,39 @@ kindplane provider add provider-kubernetes xpkg.upbound.io/crossplane-contrib/pr
   ✓ Provider installed
   → Waiting for provider to become healthy...
   ✓ Provider is healthy
+```
+
+## kindplane provider remove
+
+![kindplane provider remove demo](../assets/vhs/provider-remove.gif)
+
+Remove a Crossplane provider from the cluster.
+
+### Usage
+
+```bash
+kindplane provider remove <name>
+```
+
+### Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `name` | Name of the provider to remove |
+
+### Examples
+
+#### Remove a Provider
+
+```bash
+kindplane provider remove provider-gcp
+```
+
+### Output
+
+```
+→ Removing provider 'provider-gcp'...
+  ✓ Provider removed
 ```
 
 ## Provider Package URLs

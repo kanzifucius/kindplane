@@ -78,9 +78,10 @@ func (TimeoutExtendedMsg) isDashboardMsg() {}
 
 // BootstrapCompleteMsg indicates the entire bootstrap is complete
 type BootstrapCompleteMsg struct {
-	Success bool
-	Message string
-	Error   error
+	Success      bool
+	Message      string
+	Error        error
+	NextStepHint string // Command hint for next steps (e.g., "kubectl cluster-info --context ...")
 }
 
 func (BootstrapCompleteMsg) isDashboardMsg() {}
@@ -132,6 +133,9 @@ type DashboardModel struct {
 	success   bool
 	result    BootstrapCompleteMsg
 
+	// Completion display
+	nextStepHint string // Hint command to show on success (e.g., "kubectl cluster-info --context ...")
+
 	// Pod status
 	pods []PodInfo
 
@@ -153,6 +157,13 @@ func WithTimeout(timeout time.Duration) DashboardOption {
 func WithExtendAmount(amount time.Duration) DashboardOption {
 	return func(m *DashboardModel) {
 		m.extendAmount = amount
+	}
+}
+
+// WithNextStepHint sets the command hint to display on successful completion
+func WithNextStepHint(hint string) DashboardOption {
+	return func(m *DashboardModel) {
+		m.nextStepHint = hint
 	}
 }
 
@@ -210,6 +221,12 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// If completed, any key exits
+		if m.completed {
+			m.quitting = true
+			return m, tea.Quit
+		}
+
 		switch msg.String() {
 		case "ctrl+c", "q":
 			if m.state != nil && m.state.Cancel != nil {
@@ -342,7 +359,9 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if msg.Error != nil {
 			m.addLogLine(fmt.Sprintf("Bootstrap failed: %v", msg.Error))
 		}
-		return m, tea.Quit
+		// Don't quit immediately - show completion summary view
+		// User will press any key to exit
+		return m, nil
 	}
 
 	return m, tea.Batch(cmds...)
@@ -366,6 +385,12 @@ func (m DashboardModel) View() string {
 	}
 
 	width := DashboardWidth(m.width)
+
+	// Show completion view if bootstrap is complete
+	if m.completed {
+		return m.renderCompletionView(width)
+	}
+
 	var sections []string
 
 	// Header section
@@ -734,6 +759,148 @@ func (m DashboardModel) renderFooter(width int) string {
 	return StyleDashboardFooter.Render(footer)
 }
 
+// renderCompletionView renders the completion summary panel after bootstrap finishes
+func (m DashboardModel) renderCompletionView(width int) string {
+	var sections []string
+
+	// Header - success or failure
+	var headerIcon, headerText string
+	var headerStyle lipgloss.Style
+	if m.success {
+		headerIcon = IconSuccess
+		headerText = "Bootstrap Complete"
+		headerStyle = StyleSuccess
+	} else {
+		headerIcon = IconError
+		headerText = "Bootstrap Failed"
+		headerStyle = StyleError
+	}
+
+	// Build header content
+	elapsed := time.Since(m.startTime).Round(time.Second)
+	headerLine := headerStyle.Render(fmt.Sprintf("%s %s", headerIcon, headerText))
+
+	clusterLine := ""
+	if m.tracker.ClusterName() != "" {
+		clusterLine = StyleDashboardLabel.Render("Cluster: ") + StyleDashboardValue.Render(m.tracker.ClusterName())
+	}
+
+	durationLine := StyleDashboardLabel.Render("Duration: ") + StyleDashboardValue.Render(elapsed.String())
+
+	headerContent := headerLine + "\n"
+	if clusterLine != "" {
+		headerContent += clusterLine + "    " + durationLine
+	} else {
+		headerContent += durationLine
+	}
+
+	// Header box style based on success/failure
+	var headerBoxStyle lipgloss.Style
+	if m.success {
+		headerBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(ColorSuccess).
+			Padding(0, 1).
+			Width(width - 2)
+	} else {
+		headerBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(ColorError).
+			Padding(0, 1).
+			Width(width - 2)
+	}
+
+	sections = append(sections, headerBoxStyle.Render(headerContent))
+
+	// Phase summary table
+	var phaseLines []string
+	phases := m.tracker.Phases()
+	for _, phase := range phases {
+		icon := phase.Status.Icon()
+		style := PhaseStatusStyle(phase.Status)
+
+		// Format duration
+		duration := phase.FormatDuration()
+		durationStr := StyleMuted.Render(duration)
+
+		// Build line with proper alignment
+		nameWidth := width - 12 // Leave room for icon, duration, borders
+		name := phase.Name
+		if len(name) > nameWidth {
+			name = name[:nameWidth-3] + "..."
+		}
+
+		// Add message or skip reason if present
+		detail := ""
+		if phase.Message != "" {
+			detail = StyleMuted.Render(" (" + phase.Message + ")")
+		} else if phase.SkipReason != "" {
+			detail = StyleMuted.Render(" (" + phase.SkipReason + ")")
+		}
+
+		line := fmt.Sprintf(" %s %s%s", style.Render(icon), style.Render(name), detail)
+
+		// Add duration aligned to the right
+		lineWidth := lipgloss.Width(line)
+		padding := width - lineWidth - len(duration) - 4
+		if padding < 1 {
+			padding = 1
+		}
+		line += strings.Repeat(" ", padding) + durationStr
+
+		phaseLines = append(phaseLines, line)
+	}
+
+	phaseContent := strings.Join(phaseLines, "\n")
+	phaseBox := StyleDashboardBox.Width(width - 2).Render(phaseContent)
+	phaseBox = insertBorderTitle(phaseBox, "Phases", StyleDashboardPhaseHeader)
+	sections = append(sections, phaseBox)
+
+	// Result message and next steps (only for success)
+	if m.success {
+		var resultLines []string
+
+		// Success message
+		resultLines = append(resultLines, StyleSuccess.Render(IconSuccess)+" "+StyleBold.Render("Cluster ready!"))
+		resultLines = append(resultLines, "")
+
+		// Next step hint - prefer result hint, fall back to model hint
+		hint := m.result.NextStepHint
+		if hint == "" {
+			hint = m.nextStepHint
+		}
+		if hint != "" {
+			resultLines = append(resultLines, StyleMuted.Render("Next step:"))
+			resultLines = append(resultLines, "  "+StyleCode.Render(hint))
+		}
+
+		resultContent := strings.Join(resultLines, "\n")
+		resultBox := StyleBoxSuccess.Width(width - 2).Render(resultContent)
+		sections = append(sections, resultBox)
+	} else {
+		// Error message
+		var errorLines []string
+		errorLines = append(errorLines, StyleError.Render(IconError)+" "+StyleBold.Render("Bootstrap failed"))
+		if m.result.Error != nil {
+			errorLines = append(errorLines, "")
+			errorLines = append(errorLines, StyleMuted.Render("Error: ")+m.result.Error.Error())
+		}
+
+		errorContent := strings.Join(errorLines, "\n")
+		errorBox := StyleBoxError.Width(width - 2).Render(errorContent)
+		sections = append(sections, errorBox)
+	}
+
+	// Footer with "press any key to exit"
+	footerText := StyleMuted.Render("Press any key to exit")
+	footerPadding := (width - lipgloss.Width(footerText)) / 2
+	footer := strings.Repeat(" ", footerPadding) + footerText
+
+	sections = append(sections, footer)
+
+	return strings.Join(sections, "\n")
+}
+
 // Result returns the final result after the dashboard completes
 func (m DashboardModel) Result() BootstrapCompleteMsg {
 	return m.result
@@ -816,8 +983,13 @@ func (c *DashboardController) ExtendTimeout(newDeadline time.Time) {
 
 // Complete signals that the bootstrap is complete
 func (c *DashboardController) Complete(success bool, message string, err error) {
+	c.CompleteWithHint(success, message, err, "")
+}
+
+// CompleteWithHint signals that the bootstrap is complete with a hint for next steps
+func (c *DashboardController) CompleteWithHint(success bool, message string, err error, hint string) {
 	if c.program != nil {
-		c.program.Send(BootstrapCompleteMsg{Success: success, Message: message, Error: err})
+		c.program.Send(BootstrapCompleteMsg{Success: success, Message: message, Error: err, NextStepHint: hint})
 	}
 }
 

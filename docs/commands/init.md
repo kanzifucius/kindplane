@@ -23,8 +23,7 @@ The `init` command creates a new `kindplane.yaml` configuration file with sensib
 The generated file includes:
 
 - Cluster configuration with 1 control plane and 1 worker node
-- Crossplane with common providers (AWS, Azure, Kubernetes)
-- External Secrets Operator configuration
+- Crossplane with common providers (AWS, Kubernetes)
 - Example Helm chart configurations (commented out)
 - Example composition sources (commented out)
 - JSON Schema reference for IDE support
@@ -84,10 +83,6 @@ crossplane:
       package: xpkg.upbound.io/upbound/provider-aws:v1.1.0
     - name: provider-kubernetes
       package: xpkg.upbound.io/crossplane-contrib/provider-kubernetes:v0.12.0
-
-eso:
-  enabled: true
-  version: "0.9.11"
 
 charts: []
 

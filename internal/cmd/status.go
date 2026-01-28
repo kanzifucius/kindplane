@@ -210,36 +210,35 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		statusContent.WriteString(statusMutedStyle.Render("No providers installed"))
 		statusContent.WriteString("\n")
 	} else {
+		// Build provider table
+		headers := []string{"NAME", "VERSION", "PACKAGE", "STATUS"}
+		var rows [][]string
+
 		for _, p := range providers {
-			var icon string
-			var style lipgloss.Style
+			var status string
 			if p.Healthy {
-				icon = ui.IconSuccess
-				style = statusHealthyStyle
+				status = ui.IconSuccess + " healthy"
 			} else {
-				icon = ui.IconError
-				style = statusUnhealthyStyle
-			}
-
-			statusContent.WriteString("  ")
-			statusContent.WriteString(style.Render(icon))
-			statusContent.WriteString(" ")
-			statusContent.WriteString(lipgloss.NewStyle().Bold(true).Render(p.Name))
-			if p.Version != "" {
-				statusContent.WriteString(statusMutedStyle.Render(" (" + p.Version + ")"))
-			}
-			statusContent.WriteString("\n")
-
-			if statusDetailed {
-				statusContent.WriteString("    ")
-				statusContent.WriteString(statusMutedStyle.Render("Package: " + p.Package))
-				statusContent.WriteString("\n")
-				if p.Message != "" {
-					statusContent.WriteString("    ")
-					statusContent.WriteString(statusMutedStyle.Render("Message: " + p.Message))
-					statusContent.WriteString("\n")
+				status = ui.IconError + " unhealthy"
+				if statusDetailed && p.Message != "" {
+					status = ui.IconError + " " + p.Message
 				}
 			}
+
+			rows = append(rows, []string{
+				p.Name,
+				p.Version,
+				ui.TruncateWithEllipsis(p.Package, 35),
+				status,
+			})
+		}
+
+		// Render table and indent each line to fit within the box
+		tableOutput := ui.RenderTable(headers, rows)
+		for _, line := range strings.Split(tableOutput, "\n") {
+			statusContent.WriteString("  ")
+			statusContent.WriteString(line)
+			statusContent.WriteString("\n")
 		}
 	}
 

@@ -157,6 +157,9 @@ func runUp(cmd *cobra.Command, args []string) error {
 func runUpDashboard(pt *ui.PhaseTracker) error {
 	ctx := context.Background()
 
+	// Build the next step hint
+	nextStepHint := fmt.Sprintf("kubectl cluster-info --context %s", cfg.GetKubeContext())
+
 	result, err := ui.RunBootstrapDashboard(
 		ctx,
 		pt,
@@ -165,6 +168,7 @@ func runUpDashboard(pt *ui.PhaseTracker) error {
 		},
 		ui.WithTimeout(upTimeout),
 		ui.WithExtendAmount(5*time.Minute),
+		ui.WithNextStepHint(nextStepHint),
 	)
 
 	if err != nil {
@@ -180,8 +184,7 @@ func runUpDashboard(pt *ui.PhaseTracker) error {
 		return fmt.Errorf("%s", result.Message)
 	}
 
-	// Print success message after dashboard exits
-	pt.PrintSuccessWithHint("Cluster ready!", fmt.Sprintf("kubectl cluster-info --context %s", cfg.GetKubeContext()))
+	// Success - the completion view already showed the success message
 	return nil
 }
 

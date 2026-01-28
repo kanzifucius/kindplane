@@ -4,10 +4,33 @@ This guide helps you diagnose and fix common issues with kindplane.
 
 ## Diagnostic Commands
 
+### Pre-flight Checks
+
+Before bootstrapping, verify your system is ready:
+
+```bash
+kindplane doctor
+```
+
 ### Check Cluster Status
 
 ```bash
-kindplane status --detailed
+kindplane status
+```
+
+### Run Diagnostics
+
+```bash
+kindplane diagnostics
+kindplane diagnostics --component providers
+kindplane diagnostics --component crossplane
+```
+
+### Stream Logs
+
+```bash
+kindplane logs
+kindplane logs --component providers --follow
 ```
 
 ### Check Providers
@@ -20,12 +43,16 @@ kubectl describe provider <provider-name>
 ### Check Provider Logs
 
 ```bash
+kindplane logs --component providers
+# Or via kubectl:
 kubectl logs -n crossplane-system -l pkg.crossplane.io/provider=<provider-name>
 ```
 
 ### Check Crossplane Logs
 
 ```bash
+kindplane logs --component crossplane
+# Or via kubectl:
 kubectl logs -n crossplane-system -l app=crossplane
 ```
 
@@ -288,10 +315,24 @@ kind delete cluster --name <unused-cluster>
 
 ## Debugging Tips
 
+### Run Doctor First
+
+Before troubleshooting, check system requirements:
+
+```bash
+kindplane doctor
+```
+
 ### Enable Verbose Output
 
 ```bash
 kindplane up --verbose
+```
+
+### Run Diagnostics
+
+```bash
+kindplane diagnostics
 ```
 
 ### Watch Resources
@@ -309,11 +350,15 @@ kubectl get events --sort-by='.lastTimestamp'
 ### Export Diagnostics
 
 ```bash
-# Create a diagnostics bundle
+# Use kindplane diagnostics
+kindplane diagnostics > diagnostics-report.txt
+
+# Or create a manual diagnostics bundle
 mkdir -p diagnostics
 kubectl get providers -o yaml > diagnostics/providers.yaml
 kubectl get pods -A -o yaml > diagnostics/pods.yaml
-kubectl logs -n crossplane-system -l app=crossplane > diagnostics/crossplane.log
+kindplane logs --component crossplane --tail 500 > diagnostics/crossplane.log
+kindplane logs --component providers --tail 500 > diagnostics/providers.log
 ```
 
 ## Getting Help

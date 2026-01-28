@@ -86,7 +86,7 @@ sudo mv bin/kindplane /usr/local/bin/
 
 ### Requirements for Building
 
-- Go 1.23 or later
+- Go 1.25 or later
 - Git
 
 ## Verify Installation

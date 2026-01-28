@@ -1,6 +1,9 @@
-# Installing External Secrets Operator
+# External Secrets Operator
 
-External Secrets Operator (ESO) can be installed via the `charts` section, which provides more flexibility than the previous dedicated installer.
+External Secrets Operator (ESO) can be installed via the `charts` section in your kindplane configuration.
+
+!!! note "ESO via Charts"
+    ESO is no longer a dedicated section in kindplane. Instead, install it as a Helm chart for more flexibility and control over the installation.
 
 ## Installation via Charts
 

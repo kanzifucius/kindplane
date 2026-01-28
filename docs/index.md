@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://github.com/kanzifucius/kindplane/actions/workflows/ci.yaml"><img src="https://github.com/kanzifucius/kindplane/actions/workflows/ci.yaml/badge.svg" alt="Build"></a>
   <a href="https://github.com/kanzifucius/kindplane/releases/latest"><img src="https://img.shields.io/github/v/release/kanzifucius/kindplane?style=flat" alt="Release"></a>
-  <img src="https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat&logo=go" alt="Go Version">
+  <img src="https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go" alt="Go Version">
   <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License">
   <img src="https://img.shields.io/badge/Crossplane-1.15+-7C3AED?style=flat" alt="Crossplane">
 </p>
@@ -24,13 +24,15 @@ It automates the tedious process of setting up a local Kubernetes development en
 - :rocket: **One-command bootstrap** - Create fully configured Kind clusters with a single command
 - :gear: **Crossplane integration** - Automatic installation and configuration of Crossplane
 - :package: **Provider management** - Install and manage Crossplane providers (AWS, Azure, GCP, etc.)
-- :lock: **External Secrets Operator** - Optional ESO installation for secrets management
 - :bar_chart: **Helm chart support** - Install any Helm chart with configurable phases
 - :whale: **Local container registry** - Built-in registry for faster image development without remote pushes
 - :shield: **Trusted CA certificates** - Configure custom CAs for private registries and workloads
-- :art: **Beautiful CLI** - Rich terminal output with colours, icons, and progress indicators
+- :art: **Beautiful CLI** - Rich terminal UI with dashboard mode and progress indicators
 - :mag: **Smart diagnostics** - Detailed failure diagnostics with pod logs and conditions
 - :floppy_disk: **GitOps export** - Dump cluster resources in GitOps-friendly format
+- :stethoscope: **Pre-flight checks** - Verify system requirements with the `doctor` command
+- :page_facing_up: **Log streaming** - Stream logs from cluster components
+- :wrench: **Apply resources** - Apply Crossplane compositions without full bootstrap
 
 ## Quick Start
 
@@ -64,8 +66,8 @@ graph LR
     C --> D[Kind Cluster]
     D --> E[Crossplane]
     E --> F[Providers]
-    F --> G[ESO]
-    G --> H[Helm Charts]
+    F --> G[Helm Charts]
+    G --> H[Compositions]
 ```
 
 1. **Initialise** - Generate a configuration file with `kindplane init`

@@ -229,6 +229,97 @@ func TestPhaseStatusStyle(t *testing.T) {
 	}
 }
 
+func TestDashboardModel_CompletionView(t *testing.T) {
+	tracker := NewPhaseTracker("Bootstrap", WithClusterInfo("my-cluster", "kindplane.yaml"))
+	tracker.AddPhase("Create cluster")
+	tracker.AddPhase("Install Crossplane")
+
+	// Mark phases as complete
+	tracker.MarkPhaseRunning("Create cluster")
+	tracker.MarkPhaseComplete()
+	tracker.MarkPhaseRunning("Install Crossplane")
+	tracker.MarkPhaseComplete()
+
+	model := NewDashboardModel(tracker, context.Background(),
+		WithNextStepHint("kubectl cluster-info --context kindplane-test"),
+	)
+	model.width = 100
+	model.height = 40
+
+	// Set completed state
+	model.completed = true
+	model.success = true
+	model.result = BootstrapCompleteMsg{
+		Success: true,
+		Message: "Bootstrap completed successfully",
+	}
+
+	view := model.View()
+
+	// Should show completion view content
+	if !containsString(view, "Bootstrap Complete") {
+		t.Error("expected completion view to contain 'Bootstrap Complete'")
+	}
+	if !containsString(view, "Cluster ready") {
+		t.Error("expected completion view to contain 'Cluster ready'")
+	}
+	if !containsString(view, "my-cluster") {
+		t.Error("expected completion view to contain cluster name")
+	}
+	if !containsString(view, "kubectl cluster-info") {
+		t.Error("expected completion view to contain next step hint")
+	}
+	if !containsString(view, "Press any key to exit") {
+		t.Error("expected completion view to contain exit instruction")
+	}
+}
+
+func TestDashboardModel_CompletionView_Failure(t *testing.T) {
+	tracker := NewPhaseTracker("Bootstrap", WithClusterInfo("my-cluster", "kindplane.yaml"))
+	tracker.AddPhase("Create cluster")
+	tracker.AddPhase("Install Crossplane")
+
+	// Mark first phase complete, second failed
+	tracker.MarkPhaseRunning("Create cluster")
+	tracker.MarkPhaseComplete()
+	tracker.MarkPhaseRunning("Install Crossplane")
+
+	model := NewDashboardModel(tracker, context.Background())
+	model.width = 100
+	model.height = 40
+
+	// Set failed state
+	model.completed = true
+	model.success = false
+	model.result = BootstrapCompleteMsg{
+		Success: false,
+		Message: "Bootstrap failed",
+		Error:   context.DeadlineExceeded,
+	}
+
+	view := model.View()
+
+	// Should show failure content
+	if !containsString(view, "Bootstrap Failed") {
+		t.Error("expected completion view to contain 'Bootstrap Failed'")
+	}
+	if !containsString(view, "Press any key to exit") {
+		t.Error("expected completion view to contain exit instruction")
+	}
+}
+
+func TestDashboardModel_WithNextStepHint(t *testing.T) {
+	tracker := NewPhaseTracker("test")
+
+	model := NewDashboardModel(tracker, context.Background(),
+		WithNextStepHint("kubectl get pods"),
+	)
+
+	if model.nextStepHint != "kubectl get pods" {
+		t.Errorf("expected nextStepHint 'kubectl get pods', got '%s'", model.nextStepHint)
+	}
+}
+
 // Helper function
 func containsString(s, substr string) bool {
 	return len(s) > 0 && len(substr) > 0 && (s == substr || len(s) >= len(substr) && findSubstring(s, substr))

@@ -15,7 +15,6 @@ kindplane status [flags]
 | Flag | Description |
 |------|-------------|
 | `--config`, `-c` | Configuration file (default: `kindplane.yaml`) |
-| `--detailed` | Include detailed pod information |
 
 ## Description
 
@@ -23,16 +22,10 @@ The `status` command displays the current state of your cluster and all installe
 
 ## Examples
 
-### Basic Status
+### Check Status
 
 ```bash
 kindplane status
-```
-
-### Detailed Status
-
-```bash
-kindplane status --detailed
 ```
 
 ### Status from Specific Configuration
@@ -42,8 +35,6 @@ kindplane status --config production.yaml
 ```
 
 ## Output
-
-### Basic Status
 
 ```
 ╭────────────────────────────────────────────────────────────────╮
@@ -62,46 +53,9 @@ kindplane status --config production.yaml
 │    ✓ provider-aws          Healthy                             │
 │    ✓ provider-kubernetes   Healthy                             │
 │                                                                │
-│  External Secrets Operator                                     │
-│    Version: 0.9.11                                             │
-│    Status:  Healthy                                            │
-│                                                                │
 │  Helm Charts                                                   │
 │    ✓ cert-manager      cert-manager       1.14.0               │
 │    ✓ ingress-nginx     ingress-nginx      4.9.0                │
-│                                                                │
-╰────────────────────────────────────────────────────────────────╯
-```
-
-### Detailed Status
-
-With `--detailed`, additional pod information is shown:
-
-```
-╭────────────────────────────────────────────────────────────────╮
-│  kindplane Status (Detailed)                                   │
-├────────────────────────────────────────────────────────────────┤
-│                                                                │
-│  Cluster: kindplane-dev                                        │
-│  Status:  Running                                              │
-│                                                                │
-│  Nodes                                                         │
-│    ✓ kindplane-dev-control-plane  Ready   v1.29.0              │
-│    ✓ kindplane-dev-worker         Ready   v1.29.0              │
-│    ✓ kindplane-dev-worker2        Ready   v1.29.0              │
-│                                                                │
-│  Crossplane Pods (crossplane-system)                           │
-│    ✓ crossplane-6d4f8b9c7-xk2jl           Running  1/1         │
-│    ✓ crossplane-rbac-manager-5f7d8b9c4    Running  1/1         │
-│                                                                │
-│  Provider Pods                                                 │
-│    ✓ provider-aws-7b8f9d6c5-lm3np         Running  1/1         │
-│    ✓ provider-kubernetes-6f9d8c7b4-qr4st  Running  1/1         │
-│                                                                │
-│  ESO Pods (external-secrets)                                   │
-│    ✓ external-secrets-7f9d8b6c5-xk2jl     Running  1/1         │
-│    ✓ external-secrets-webhook-5f8d9b7c4   Running  1/1         │
-│    ✓ external-secrets-cert-ctrl-6d7e8f9   Running  1/1         │
 │                                                                │
 ╰────────────────────────────────────────────────────────────────╯
 ```
@@ -141,4 +95,13 @@ For scripting, use kubectl directly:
 ```bash
 kubectl get providers -o json
 kubectl get pods -A -o json
+```
+
+### Quick Health Check
+
+Combine with doctor for comprehensive check:
+
+```bash
+kindplane doctor
+kindplane status
 ```
