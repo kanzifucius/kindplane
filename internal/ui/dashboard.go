@@ -1047,13 +1047,8 @@ func runNonTTYBootstrap(
 	// Print header
 	tracker.PrintHeader()
 
-	// Create a no-op controller for non-TTY mode
-	// The work function will still work, but dashboard updates are ignored
-	// since the tracker's print methods are called directly
-	ctrl := &DashboardController{program: nil}
-
-	// Run the work
-	err := workFn(parentCtx, ctrl)
+	// Run the work in print mode (nil controller)
+	err := workFn(parentCtx, nil)
 
 	if err != nil {
 		result := BootstrapCompleteMsg{Success: false, Error: err}
