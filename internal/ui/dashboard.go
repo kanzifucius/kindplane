@@ -518,32 +518,24 @@ func (m DashboardModel) renderCurrentOperation(width int) string {
 
 	var content string
 	if m.currentStep != "" {
-		content = fmt.Sprintf("%s %s\n", m.spinner.View(), m.currentStep)
+		content = fmt.Sprintf("%s %s", m.spinner.View(), m.currentStep)
 	} else {
-		content = fmt.Sprintf("%s Working...\n", m.spinner.View())
+		content = fmt.Sprintf("%s Working...", m.spinner.View())
 	}
 
 	// Progress bar or spinner
 	if m.currentProgress >= 0 && m.currentProgress <= 1 {
 		// Show progress bar
-		content += "\n" + m.progress.ViewAs(m.currentProgress)
+		content += "\n\n" + m.progress.ViewAs(m.currentProgress)
 	}
 
-	// Add title as border title
+	// Render box with consistent width
 	box := StyleDashboardOperationBox.Width(width - 2).Render(content)
-	titleLine := StyleBold.Render(" " + title + " ")
 
-	// Replace first part of top border with title
-	lines := strings.Split(box, "\n")
-	if len(lines) > 0 {
-		// Insert title into first line
-		firstLine := lines[0]
-		if len(firstLine) > 3 && len(titleLine) < len(firstLine)-4 {
-			lines[0] = firstLine[:2] + titleLine + firstLine[2+len(titleLine):]
-		}
-	}
+	// Add title to border
+	box = insertBorderTitle(box, title, StyleBold)
 
-	return strings.Join(lines, "\n")
+	return box
 }
 
 func (m DashboardModel) renderLogPanel(width int) string {
@@ -560,15 +552,50 @@ func (m DashboardModel) renderLogPanel(width int) string {
 		content = StyleMuted.Render("No log output yet...")
 	}
 
+	// Render box with consistent width
 	box := StyleDashboardLogBox.Width(width - 2).Render(content)
 
-	// Add "Logs" title
-	titleLine := StyleMuted.Render(" Logs ")
+	// Add title to border
+	box = insertBorderTitle(box, "Logs", StyleMuted)
+
+	return box
+}
+
+// insertBorderTitle inserts a title into the top border of a box
+func insertBorderTitle(box, title string, style lipgloss.Style) string {
 	lines := strings.Split(box, "\n")
-	if len(lines) > 0 {
-		firstLine := lines[0]
-		if len(firstLine) > 3 && len(titleLine) < len(firstLine)-4 {
-			lines[0] = firstLine[:2] + titleLine + firstLine[2+len(titleLine):]
+	if len(lines) == 0 {
+		return box
+	}
+
+	firstLine := lines[0]
+	titleText := " " + title + " "
+	styledTitle := style.Render(titleText)
+	titleWidth := lipgloss.Width(titleText)
+
+	// We need to find where to insert the title (after the first border character)
+	// The first line is the top border, typically: ┌──────────────┐
+	// We want to replace some dashes after position 1: ┌─ Title ─────┐
+
+	if len(firstLine) > titleWidth+4 {
+		// Find the visual width of the first line
+		lineWidth := lipgloss.Width(firstLine)
+		if lineWidth > titleWidth+4 {
+			// Build new first line: border char + title + remaining border
+			// Since the border might have ANSI codes, we need to be careful
+			// Simple approach: take first rune, add title, pad with border chars
+			runes := []rune(firstLine)
+			if len(runes) > 2 {
+				// Get first border character
+				firstChar := string(runes[0])
+				lastChar := string(runes[len(runes)-1])
+
+				// Calculate how many border chars we need after the title
+				remainingWidth := lineWidth - 2 - titleWidth // -2 for first and last border chars
+
+				// Build the new line
+				lines[0] = firstChar + styledTitle + strings.Repeat("─", remainingWidth) + lastChar
+			}
 		}
 	}
 
