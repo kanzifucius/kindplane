@@ -192,9 +192,15 @@ nav:
       - up: commands/up.md
       - down: commands/down.md
       - status: commands/status.md
+      - doctor: commands/doctor.md
+      - logs: commands/logs.md
+      - diagnostics: commands/diagnostics.md
+      - apply: commands/apply.md
       - dump: commands/dump.md
       - provider: commands/provider.md
       - chart: commands/chart.md
+      - cluster: commands/cluster.md
+      - config: commands/config.md
       - credentials: commands/credentials.md
   - CLI Reference:
       - Overview: cli-reference/index.md
@@ -204,14 +210,25 @@ nav:
       - kindplane up: cli-reference/kindplane_up.md
       - kindplane down: cli-reference/kindplane_down.md
       - kindplane status: cli-reference/kindplane_status.md
+      - kindplane doctor: cli-reference/kindplane_doctor.md
+      - kindplane logs: cli-reference/kindplane_logs.md
+      - kindplane diagnostics: cli-reference/kindplane_diagnostics.md
+      - kindplane apply: cli-reference/kindplane_apply.md
       - kindplane dump: cli-reference/kindplane_dump.md
       - kindplane provider: cli-reference/kindplane_provider.md
       - kindplane provider add: cli-reference/kindplane_provider_add.md
       - kindplane provider list: cli-reference/kindplane_provider_list.md
+      - kindplane provider remove: cli-reference/kindplane_provider_remove.md
       - kindplane chart: cli-reference/kindplane_chart.md
       - kindplane chart install: cli-reference/kindplane_chart_install.md
       - kindplane chart list: cli-reference/kindplane_chart_list.md
       - kindplane chart uninstall: cli-reference/kindplane_chart_uninstall.md
+      - kindplane cluster: cli-reference/kindplane_cluster.md
+      - kindplane cluster list: cli-reference/kindplane_cluster_list.md
+      - kindplane config: cli-reference/kindplane_config.md
+      - kindplane config show: cli-reference/kindplane_config_show.md
+      - kindplane config diff: cli-reference/kindplane_config_diff.md
+      - kindplane config kind: cli-reference/kindplane_config_kind.md
       - kindplane credentials: cli-reference/kindplane_credentials.md
       - kindplane credentials configure: cli-reference/kindplane_credentials_configure.md
   - Guides:
