@@ -10,8 +10,11 @@ on:
       - '.github/workflows/docs.yaml'
       - 'internal/cmd/**'
       - 'cmd/**'
-    tags:
-      - 'v*'
+  # Deploy versioned docs only after release workflow succeeds
+  workflow_run:
+    workflows: ["Release"]
+    types:
+      - completed
   workflow_dispatch:
     inputs:
       action:
@@ -44,11 +47,26 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Skip workflow_run events that didn't succeed or aren't for tags
+    if: |
+      github.event_name != 'workflow_run' || 
+      (github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v'))
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      - name: detect_tag
+        id: detect_tag
+        if: github.event_name == 'workflow_run'
+        run: |
+          if git rev-parse -q --verify "refs/tags/${{ github.event.workflow_run.head_branch }}" > /dev/null 2>&1; then
+            echo "is_tag=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_tag=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -89,12 +107,13 @@ jobs:
         run: |
           git fetch origin gh-pages --depth=1 || echo "gh-pages branch doesn't exist yet"
 
-      # Deploy versioned docs on tag push
-      - name: Deploy versioned docs (tag)
-        if: startsWith(github.ref, 'refs/tags/v')
+      # Deploy versioned docs after successful release
+      - name: Deploy versioned docs (after release)
+        if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v') && steps.detect_tag.outputs.is_tag == 'true'
         run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          echo "Deploying version: $VERSION"
+          VERSION="${{ github.event.workflow_run.head_branch }}"
+          VERSION=${VERSION#v}
+          echo "Deploying version: $VERSION (triggered by successful release)"
           mike deploy --push --update-aliases $VERSION latest
           mike set-default --push latest
 

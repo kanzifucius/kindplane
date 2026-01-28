@@ -8,9 +8,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Crossplane Helm values support**: You can now customise the Crossplane Helm installation with custom values, values files, and repository URL.
+  ```yaml
+  crossplane:
+    version: "1.15.0"
+    repo: "https://my-private-registry.com/charts"  # optional
+    values:
+      args:
+        - --enable-composition-functions
+    valuesFiles:
+      - ./values/crossplane.yaml
+  ```
+
 ### Changed
+- Chart phase `final` is now the preferred name for the final installation phase (replaces `post-eso`)
+
 ### Deprecated
+- Chart phase `post-eso` is deprecated in favour of `final` but remains supported for backwards compatibility
+
 ### Removed
+- **Breaking**: Removed dedicated ESO installer. The `eso` configuration section has been removed.
+  ESO can now be installed via the `charts` section, which provides more flexibility including custom values, values files, and installation phases.
+  
+  **Migration:**
+  
+  Before:
+  ```yaml
+  eso:
+    enabled: true
+    version: "0.9.11"
+  ```
+  
+  After:
+  ```yaml
+  charts:
+    - name: external-secrets
+      repo: https://charts.external-secrets.io
+      chart: external-secrets
+      version: "0.9.11"
+      namespace: external-secrets
+      phase: post-providers
+      values:
+        installCRDs: true
+  ```
+
 ### Fixed
 ### Security
 

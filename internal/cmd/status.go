@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/kanzi/kindplane/internal/crossplane"
-	"github.com/kanzi/kindplane/internal/eso"
 	"github.com/kanzi/kindplane/internal/kind"
 	"github.com/kanzi/kindplane/internal/ui"
 )
@@ -28,8 +27,7 @@ var statusCmd = &cobra.Command{
 Shows:
   - Cluster status (exists/running)
   - Crossplane installation status
-  - Provider health
-  - External Secrets Operator status`,
+  - Provider health`,
 	Example: `  # Show basic status
   kindplane status
 
@@ -212,97 +210,35 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		statusContent.WriteString(statusMutedStyle.Render("No providers installed"))
 		statusContent.WriteString("\n")
 	} else {
+		// Build provider table
+		headers := []string{"NAME", "VERSION", "PACKAGE", "STATUS"}
+		var rows [][]string
+
 		for _, p := range providers {
-			var icon string
-			var style lipgloss.Style
+			var status string
 			if p.Healthy {
-				icon = ui.IconSuccess
-				style = statusHealthyStyle
+				status = ui.IconSuccess + " healthy"
 			} else {
-				icon = ui.IconError
-				style = statusUnhealthyStyle
-			}
-
-			statusContent.WriteString("  ")
-			statusContent.WriteString(style.Render(icon))
-			statusContent.WriteString(" ")
-			statusContent.WriteString(lipgloss.NewStyle().Bold(true).Render(p.Name))
-			if p.Version != "" {
-				statusContent.WriteString(statusMutedStyle.Render(" (" + p.Version + ")"))
-			}
-			statusContent.WriteString("\n")
-
-			if statusDetailed {
-				statusContent.WriteString("    ")
-				statusContent.WriteString(statusMutedStyle.Render("Package: " + p.Package))
-				statusContent.WriteString("\n")
-				if p.Message != "" {
-					statusContent.WriteString("    ")
-					statusContent.WriteString(statusMutedStyle.Render("Message: " + p.Message))
-					statusContent.WriteString("\n")
+				status = ui.IconError + " unhealthy"
+				if statusDetailed && p.Message != "" {
+					status = ui.IconError + " " + p.Message
 				}
 			}
+
+			rows = append(rows, []string{
+				p.Name,
+				p.Version,
+				ui.TruncateWithEllipsis(p.Package, 35),
+				status,
+			})
 		}
-	}
 
-	// Check ESO status
-	if cfg.ESO.Enabled {
-		statusContent.WriteString("\n")
-		statusContent.WriteString(statusSectionStyle.Render(ui.IconLock + " External Secrets Operator"))
-		statusContent.WriteString("\n\n")
-
-		esoInstaller := eso.NewInstaller(kubeClient)
-		esoStatus, err := esoInstaller.GetStatus(ctx)
-		if err != nil {
+		// Render table and indent each line to fit within the box
+		tableOutput := ui.RenderTable(headers, rows)
+		for _, line := range strings.Split(tableOutput, "\n") {
 			statusContent.WriteString("  ")
-			statusContent.WriteString(statusUnhealthyStyle.Render(ui.IconError + " Failed to get status: " + err.Error()))
+			statusContent.WriteString(line)
 			statusContent.WriteString("\n")
-		} else {
-			if esoStatus.Installed {
-				statusContent.WriteString("  ")
-				statusContent.WriteString(statusLabelStyle.Render("Installed:"))
-				statusContent.WriteString(statusHealthyStyle.Render(ui.IconSuccess + " yes"))
-				statusContent.WriteString("\n")
-
-				statusContent.WriteString("  ")
-				statusContent.WriteString(statusLabelStyle.Render("Version:"))
-				statusContent.WriteString(esoStatus.Version)
-				statusContent.WriteString("\n")
-
-				statusContent.WriteString("  ")
-				statusContent.WriteString(statusLabelStyle.Render("Ready:"))
-				if esoStatus.Ready {
-					statusContent.WriteString(statusHealthyStyle.Render(ui.IconSuccess + " yes"))
-				} else {
-					statusContent.WriteString(statusPendingStyle.Render(ui.IconWarning + " no"))
-				}
-				statusContent.WriteString("\n")
-
-				if statusDetailed && len(esoStatus.Pods) > 0 {
-					statusContent.WriteString("\n  ")
-					statusContent.WriteString(statusMutedStyle.Render("Pods:"))
-					statusContent.WriteString("\n")
-					for _, pod := range esoStatus.Pods {
-						icon := ui.IconSuccess
-						style := statusHealthyStyle
-						if !pod.Ready {
-							icon = ui.IconWarning
-							style = statusPendingStyle
-						}
-						statusContent.WriteString("    ")
-						statusContent.WriteString(style.Render(icon))
-						statusContent.WriteString(" ")
-						statusContent.WriteString(pod.Name)
-						statusContent.WriteString(statusMutedStyle.Render(" (" + pod.Phase + ")"))
-						statusContent.WriteString("\n")
-					}
-				}
-			} else {
-				statusContent.WriteString("  ")
-				statusContent.WriteString(statusLabelStyle.Render("Installed:"))
-				statusContent.WriteString(statusMutedStyle.Render("no"))
-				statusContent.WriteString("\n")
-			}
 		}
 	}
 

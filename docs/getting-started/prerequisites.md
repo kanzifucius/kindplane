@@ -168,10 +168,19 @@ sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/b
 
 ## Checking Prerequisites
 
-kindplane requires Docker to be running. If Docker is not available, you'll see an error when running `kindplane up`:
+kindplane includes a built-in doctor command to verify all prerequisites:
 
-```
-✗ Docker is not running or not installed
+```bash
+kindplane doctor
 ```
 
-Ensure Docker is running before using kindplane.
+This checks:
+
+- Docker is running
+- kubectl is installed
+- Sufficient disk space
+- Optional tools (helm)
+
+If any required checks fail, you'll see suggestions for how to fix them.
+
+For more details, see the [doctor command documentation](../commands/doctor.md).

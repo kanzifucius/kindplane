@@ -58,7 +58,7 @@ The chart version to install.
 When to install the chart during bootstrap.
 
 - **Type:** string
-- **Default:** `post-eso`
+- **Default:** `final`
 - **Required:** No
 
 Available phases:
@@ -68,14 +68,17 @@ Available phases:
 | `pre-crossplane` | Before Crossplane installation |
 | `post-crossplane` | After Crossplane is ready |
 | `post-providers` | After all providers are healthy |
-| `post-eso` | After ESO is ready (default) |
+| `final` | Final phase, after everything else (default) |
+
+!!! note "Deprecated Phase"
+    The `post-eso` phase is deprecated and will be mapped to `final` for backwards compatibility.
 
 ### wait
 
 Wait for the chart to be fully deployed.
 
 - **Type:** boolean
-- **Default:** `false`
+- **Default:** `true`
 - **Required:** No
 
 ### timeout
@@ -150,6 +153,14 @@ Install after providers are healthy:
 
 ```yaml
 charts:
+  - name: external-secrets
+    repo: https://charts.external-secrets.io
+    chart: external-secrets
+    namespace: external-secrets
+    phase: post-providers
+    values:
+      installCRDs: true
+
   - name: argo-cd
     repo: https://argoproj.github.io/argo-helm
     chart: argo-cd
@@ -158,9 +169,9 @@ charts:
     wait: true
 ```
 
-### post-eso (default)
+### final (default)
 
-Install after ESO is ready:
+Install in the final phase after everything else:
 
 ```yaml
 charts:
@@ -168,7 +179,7 @@ charts:
     repo: https://charts.example.com
     chart: my-app
     namespace: default
-    phase: post-eso
+    phase: final
 ```
 
 ## Managing Charts
@@ -206,13 +217,23 @@ charts:
     values:
       installCRDs: true
 
-  # Install ingress controller after ESO
+  # Install External Secrets Operator after providers
+  - name: external-secrets
+    repo: https://charts.external-secrets.io
+    chart: external-secrets
+    namespace: external-secrets
+    version: "0.9.11"
+    phase: post-providers
+    values:
+      installCRDs: true
+
+  # Install ingress controller in final phase
   - name: ingress-nginx
     repo: https://kubernetes.github.io/ingress-nginx
     chart: ingress-nginx
     namespace: ingress-nginx
     version: "4.9.0"
-    phase: post-eso
+    phase: final
     wait: true
     timeout: 10m
     values:
@@ -232,7 +253,7 @@ charts:
     repo: https://prometheus-community.github.io/helm-charts
     chart: kube-prometheus-stack
     namespace: monitoring
-    phase: post-eso
+    phase: final
     valuesFiles:
       - ./values/prometheus.yaml
 ```

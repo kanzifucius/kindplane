@@ -18,7 +18,15 @@ Before starting, ensure you have:
 curl -fsSL https://raw.githubusercontent.com/kanzifucius/kindplane/main/install.sh | bash
 ```
 
-## Step 2: Initialise Configuration
+## Step 2: Check Prerequisites
+
+Verify your system is ready:
+
+```bash
+kindplane doctor
+```
+
+## Step 3: Initialise Configuration
 
 Create a configuration file:
 
@@ -31,9 +39,8 @@ This creates a `kindplane.yaml` file with sensible defaults. The file includes:
 - A Kind cluster with 1 control plane and 1 worker node
 - Crossplane installation
 - AWS and Kubernetes providers
-- External Secrets Operator
 
-## Step 3: Bootstrap the Cluster
+## Step 4: Bootstrap the Cluster
 
 Create and configure your cluster:
 
@@ -47,13 +54,13 @@ This command will:
 2. Install Crossplane
 3. Install configured providers
 4. Wait for providers to become healthy
-5. Install External Secrets Operator (if enabled)
-6. Install any configured Helm charts
+5. Install any configured Helm charts
+6. Apply compositions (if configured)
 
 !!! tip "Watch Progress"
-    kindplane shows real-time progress with coloured output and status indicators.
+    kindplane shows real-time progress with a beautiful TUI dashboard in interactive mode.
 
-## Step 4: Verify Status
+## Step 5: Verify Status
 
 Check that everything is running:
 
@@ -61,13 +68,7 @@ Check that everything is running:
 kindplane status
 ```
 
-For more detailed information:
-
-```bash
-kindplane status --detailed
-```
-
-## Step 5: Use Your Cluster
+## Step 6: Use Your Cluster
 
 Your cluster is now ready! You can:
 
@@ -82,7 +83,7 @@ kubectl get providers -o wide
 kubectl apply -f my-resource.yaml
 ```
 
-## Step 6: Clean Up
+## Step 7: Clean Up
 
 When you're done, delete the cluster:
 
@@ -138,15 +139,21 @@ crossplane:
     - name: provider-kubernetes
       package: xpkg.upbound.io/crossplane-contrib/provider-kubernetes:v0.12.0
 
-eso:
-  enabled: true
-  version: "0.9.11"
-
 charts:
+  # Install External Secrets Operator via charts
+  - name: external-secrets
+    repo: https://charts.external-secrets.io
+    chart: external-secrets
+    namespace: external-secrets
+    phase: post-providers
+    values:
+      installCRDs: true
+
+  # Install ingress controller
   - name: ingress-nginx
     repo: https://kubernetes.github.io/ingress-nginx
     chart: ingress-nginx
     namespace: ingress-nginx
-    phase: post-eso
+    phase: final
     wait: true
 ```

@@ -1,11 +1,11 @@
 # Commands Overview
 
-kindplane provides a set of commands for managing your local Crossplane development environment.
+kindplane provides a comprehensive set of commands for managing your local Crossplane development environment.
 
 ## Command Structure
 
 ```
-kindplane [command] [flags]
+kindplane [command] [subcommand] [flags]
 ```
 
 ## Global Flags
@@ -28,6 +28,10 @@ These flags are available for all commands:
 | [down](down.md) | Delete the cluster |
 | [status](status.md) | Show cluster status |
 | [dump](dump.md) | Export cluster resources |
+| [doctor](doctor.md) | Check system requirements and prerequisites |
+| [logs](logs.md) | Stream logs from cluster components |
+| [diagnostics](diagnostics.md) | Run diagnostics on cluster components |
+| [apply](apply.md) | Apply Crossplane resources to the cluster |
 
 ## Management Commands
 
@@ -36,12 +40,17 @@ These flags are available for all commands:
 | [provider](provider.md) | Manage Crossplane providers |
 | [chart](chart.md) | Manage Helm charts |
 | [credentials](credentials.md) | Configure cloud credentials |
+| [cluster](cluster.md) | Manage Kind clusters |
+| [config](config.md) | View and compare configuration |
 
 ## Quick Reference
 
 ### Create a Development Environment
 
 ```bash
+# Check system requirements
+kindplane doctor
+
 # Initialise configuration
 kindplane init
 
@@ -61,8 +70,27 @@ kindplane provider add provider-gcp xpkg.upbound.io/upbound/provider-gcp:v1.0.0
 # Install a chart
 kindplane chart install prometheus https://prometheus-community.github.io/helm-charts kube-prometheus-stack
 
+# Apply compositions
+kindplane apply --from-config
+
+# View logs
+kindplane logs --component crossplane
+
 # Export resources
 kindplane dump -o ./exported
+```
+
+### Troubleshoot Issues
+
+```bash
+# Run diagnostics
+kindplane diagnostics
+
+# Stream logs from providers
+kindplane logs --component providers --follow
+
+# View configuration
+kindplane config show
 ```
 
 ### Clean Up
@@ -80,4 +108,5 @@ Get help for any command:
 kindplane --help
 kindplane up --help
 kindplane provider --help
+kindplane config show --help
 ```

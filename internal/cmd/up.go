@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,28 +19,37 @@ import (
 	"github.com/kanzi/kindplane/internal/config"
 	"github.com/kanzi/kindplane/internal/crossplane"
 	"github.com/kanzi/kindplane/internal/diagnostics"
-	"github.com/kanzi/kindplane/internal/eso"
 	"github.com/kanzi/kindplane/internal/helm"
 	"github.com/kanzi/kindplane/internal/kind"
 	"github.com/kanzi/kindplane/internal/registry"
 	"github.com/kanzi/kindplane/internal/ui"
 )
 
+// bootstrapMode controls how the bootstrap UI is rendered
+type bootstrapMode int
+
+const (
+	// bootstrapModeDashboard uses the TUI dashboard (for TTY)
+	bootstrapModeDashboard bootstrapMode = iota
+	// bootstrapModePrint uses traditional print-based output (for non-TTY/CI)
+	bootstrapModePrint
+)
+
 var (
 	upSkipCrossplane    bool
 	upSkipProviders     bool
-	upSkipESO           bool
 	upSkipCharts        bool
 	upSkipCompositions  bool
 	upTimeout           time.Duration
 	upRollbackOnFailure bool
+	upShowValues        bool
 )
 
 var upCmd = &cobra.Command{
 	Use:   "up",
 	Short: "Create and bootstrap a Kind cluster with Crossplane",
 	Long: `Create a Kind cluster and bootstrap it with Crossplane, providers,
-External Secrets Operator, Helm charts, and custom compositions.
+Helm charts, and custom compositions.
 
 This command requires a kindplane.yaml configuration file.
 Run 'kindplane init' first if you don't have one.
@@ -50,9 +61,8 @@ The bootstrap process:
   4. Install charts with phase: post-crossplane
   5. Install Crossplane providers
   6. Install charts with phase: post-providers
-  7. Install External Secrets Operator (if enabled)
-  8. Install charts with phase: post-eso (default)
-  9. Apply custom compositions (if configured)`,
+  7. Install charts with phase: final (default)
+  8. Apply custom compositions (if configured)`,
 	Example: `  # Create cluster with full bootstrap
   kindplane up
 
@@ -70,11 +80,11 @@ The bootstrap process:
 func init() {
 	upCmd.Flags().BoolVar(&upSkipCrossplane, "skip-crossplane", false, "skip Crossplane installation")
 	upCmd.Flags().BoolVar(&upSkipProviders, "skip-providers", false, "skip Crossplane provider installation")
-	upCmd.Flags().BoolVar(&upSkipESO, "skip-eso", false, "skip External Secrets Operator installation")
 	upCmd.Flags().BoolVar(&upSkipCharts, "skip-charts", false, "skip all Helm chart installations")
 	upCmd.Flags().BoolVar(&upSkipCompositions, "skip-compositions", false, "skip applying compositions")
 	upCmd.Flags().DurationVar(&upTimeout, "timeout", 10*time.Minute, "timeout for the entire operation")
 	upCmd.Flags().BoolVar(&upRollbackOnFailure, "rollback-on-failure", false, "delete cluster if bootstrap fails")
+	upCmd.Flags().BoolVar(&upShowValues, "show-values", false, "display merged Helm values before installation")
 }
 
 // bootstrapContext holds shared resources during bootstrap
@@ -85,102 +95,393 @@ type bootstrapContext struct {
 	diagCollector *diagnostics.Collector
 }
 
+// Phase names for the bootstrap process
+const (
+	phaseRegistry       = "Create local registry"
+	phaseTrustedCAs     = "Configure trusted CAs"
+	phaseCluster        = "Create Kind cluster"
+	phaseConnect        = "Connect to cluster"
+	phasePreCrossplane  = "Install pre-crossplane charts"
+	phaseCrossplane     = "Install Crossplane"
+	phasePostCrossplane = "Install post-crossplane charts"
+	phaseProviders      = "Install providers"
+	phasePostProviders  = "Install post-providers charts"
+	phaseFinal          = "Install final charts"
+	phaseCompositions   = "Apply compositions"
+)
+
+// buildPhases creates the phase tracker with phases based on config
+func buildPhases() *ui.PhaseTracker {
+	pt := ui.NewPhaseTracker("Bootstrap Cluster",
+		ui.WithPhaseTrackerIcon(ui.IconRocket),
+		ui.WithClusterInfo(cfg.Cluster.Name, cfgFile),
+		ui.WithShowUpfrontList(true),
+	)
+
+	// Add phases conditionally based on configuration
+	pt.AddPhaseIf(cfg.Cluster.Registry.Enabled, phaseRegistry)
+	pt.AddPhaseIf(kind.HasTrustedCAs(cfg), phaseTrustedCAs)
+	pt.AddPhase(phaseCluster)
+	pt.AddPhase(phaseConnect)
+	pt.AddPhaseIf(!upSkipCharts && len(getChartsForPhase(config.ChartPhasePrecrossplane)) > 0, phasePreCrossplane)
+	pt.AddPhaseIf(!upSkipCrossplane, phaseCrossplane)
+	pt.AddPhaseIf(!upSkipCharts && len(getChartsForPhase(config.ChartPhasePostCrossplane)) > 0, phasePostCrossplane)
+	pt.AddPhaseIf(!upSkipProviders && !upSkipCrossplane && len(cfg.Crossplane.Providers) > 0, phaseProviders)
+	pt.AddPhaseIf(!upSkipCharts && len(getChartsForPhase(config.ChartPhasePostProviders)) > 0, phasePostProviders)
+	pt.AddPhaseIf(!upSkipCharts && len(getChartsForPhase(config.ChartPhaseFinal)) > 0, phaseFinal)
+	pt.AddPhaseIf(!upSkipCompositions && len(cfg.Compositions.Sources) > 0, phaseCompositions)
+
+	return pt
+}
+
 func runUp(cmd *cobra.Command, args []string) error {
 	// Require config
 	requireConfig()
 
+	// Determine bootstrap mode based on TTY
+	mode := bootstrapModePrint
+	if ui.IsTTY() {
+		mode = bootstrapModeDashboard
+	}
+
+	// Build phase tracker
+	pt := buildPhases()
+
+	if mode == bootstrapModeDashboard {
+		return runUpDashboard(pt)
+	}
+	return runUpPrint(pt)
+}
+
+// runUpDashboard runs the bootstrap with the TUI dashboard
+func runUpDashboard(pt *ui.PhaseTracker) error {
+	ctx := context.Background()
+
+	// Build the next step hint
+	nextStepHint := fmt.Sprintf("kubectl cluster-info --context %s", cfg.GetKubeContext())
+
+	result, err := ui.RunBootstrapDashboard(
+		ctx,
+		pt,
+		func(ctx context.Context, ctrl *ui.DashboardController) error {
+			return executeBootstrap(ctx, pt, ctrl)
+		},
+		ui.WithTimeout(upTimeout),
+		ui.WithExtendAmount(5*time.Minute),
+		ui.WithNextStepHint(nextStepHint),
+	)
+
+	if err != nil {
+		return err
+	}
+
+	if !result.Success {
+		// Print final summary after dashboard exits
+		pt.PrintSummary()
+		if result.Error != nil {
+			return result.Error
+		}
+		return fmt.Errorf("%s", result.Message)
+	}
+
+	// Success - the completion view already showed the success message
+	return nil
+}
+
+// runUpPrint runs the bootstrap with traditional print-based output (non-TTY/CI)
+func runUpPrint(pt *ui.PhaseTracker) error {
 	ctx, cancel := context.WithTimeout(context.Background(), upTimeout)
 	defer cancel()
 
+	// Print header with phase list
+	pt.PrintHeader()
+
+	// Execute bootstrap with nil controller (print mode)
+	if err := executeBootstrap(ctx, pt, nil); err != nil {
+		pt.PrintSummary()
+		return err
+	}
+
+	// Success!
+	pt.PrintSuccessWithHint("Cluster ready!", fmt.Sprintf("kubectl cluster-info --context %s", cfg.GetKubeContext()))
+	return nil
+}
+
+// createValuesLogger creates a ValuesLogger based on the current mode.
+// If upShowValues is false, returns nil (no logging).
+// If ctrl is non-nil (dashboard mode), logs to the dashboard log buffer.
+// Otherwise (print mode), prints to stdout with styled output.
+func createValuesLogger(ctrl *ui.DashboardController) helm.ValuesLogger {
+	if !upShowValues {
+		return nil
+	}
+
+	return func(releaseName string, values map[string]interface{}) {
+		valuesYAML, err := yaml.Marshal(values)
+		if err != nil {
+			return
+		}
+
+		if ctrl != nil {
+			// Dashboard mode: add to log buffer
+			ctrl.Log(fmt.Sprintf("Merged values for %s:", releaseName))
+			for _, line := range strings.Split(string(valuesYAML), "\n") {
+				if line != "" {
+					ctrl.Log("  " + line)
+				}
+			}
+		} else {
+			// Print mode: styled output
+			fmt.Println(ui.Info("Merged values for %s:", releaseName))
+			fmt.Println(ui.Code(string(valuesYAML)))
+		}
+	}
+}
+
+// executeBootstrap performs the actual bootstrap operations
+// If ctrl is non-nil, sends updates to the dashboard; otherwise uses print-based output
+func executeBootstrap(ctx context.Context, pt *ui.PhaseTracker, ctrl *ui.DashboardController) error {
 	// Track if we created the cluster (for rollback)
 	clusterCreated := false
 
 	// Bootstrap context for shared resources
 	var bc *bootstrapContext
 
-	// Rollback function
-	rollback := func() {
+	// Helper to handle phase failure
+	handleFailure := func(phaseName string, err error) error {
+		if ctrl != nil {
+			ctrl.FailPhase(phaseName, err)
+		} else {
+			pt.FailPhase(err)
+		}
 		if upRollbackOnFailure && clusterCreated {
-			printWarn("Rolling back: deleting cluster...")
-			if err := kind.DeleteCluster(ctx, cfg.Cluster.Name); err != nil {
-				printError("Failed to delete cluster during rollback: %v", err)
+			if ctrl != nil {
+				ctrl.Log("Rolling back: deleting cluster...")
 			} else {
-				printInfo("Cluster deleted")
+				fmt.Println(ui.Warning("Rolling back: deleting cluster..."))
+			}
+			if delErr := kind.DeleteCluster(ctx, cfg.Cluster.Name); delErr != nil {
+				if ctrl != nil {
+					ctrl.Log(fmt.Sprintf("Failed to delete cluster: %v", delErr))
+				} else {
+					fmt.Println(ui.Error("Failed to delete cluster during rollback: %v", delErr))
+				}
+			} else {
+				if ctrl != nil {
+					ctrl.Log("Cluster deleted")
+				} else {
+					fmt.Println(ui.Info("Cluster deleted"))
+				}
+			}
+		}
+		return err
+	}
+
+	// Helper to start a phase
+	startPhase := func(name string) {
+		if ctrl != nil {
+			ctrl.StartPhase(name)
+		} else {
+			pt.StartPhase(name)
+		}
+	}
+
+	// Helper to complete a phase
+	completePhase := func(name string, message string) {
+		if ctrl != nil {
+			ctrl.CompletePhase(name, message)
+		} else {
+			if message != "" {
+				pt.CompletePhaseWithMessage(message)
+			} else {
+				pt.CompletePhase()
 			}
 		}
 	}
 
-	// Step 0: Create local registry if enabled
-	var registryManager *registry.Manager
-	if cfg.Cluster.Registry.Enabled {
-		printInfo("Creating local container registry...")
-		registryManager = registry.NewManager(&cfg.Cluster.Registry)
-		if err := registryManager.Create(ctx); err != nil {
-			printError("Failed to create registry: %v", err)
-			return err
+	// Helper to skip a phase
+	skipPhase := func(name string, reason string) {
+		if ctrl != nil {
+			ctrl.SkipPhase(name, reason)
+		} else {
+			pt.SkipPhase(name, reason)
 		}
-		printSuccess("Local registry created at localhost:%d", cfg.Cluster.Registry.GetPort())
 	}
 
-	// Step 1: Create Kind cluster
+	// Helper to update operation status (dashboard only)
+	updateOp := func(step string, progress float64) {
+		if ctrl != nil {
+			ctrl.UpdateOperation(step, progress)
+		}
+	}
+
+	// Helper to log a message
+	log := func(msg string) {
+		if ctrl != nil {
+			ctrl.Log(msg)
+		}
+	}
+
+	// Phase: Create local registry
+	var registryManager *registry.Manager
+	if cfg.Cluster.Registry.Enabled {
+		startPhase(phaseRegistry)
+		updateOp("Creating registry container...", -1)
+		registryManager = registry.NewManager(&cfg.Cluster.Registry)
+		if err := registryManager.Create(ctx); err != nil {
+			return handleFailure(phaseRegistry, fmt.Errorf("failed to create registry: %w", err))
+		}
+		completePhase(phaseRegistry, fmt.Sprintf("Registry available at localhost:%d", cfg.Cluster.Registry.GetPort()))
+	}
+
+	// Phase: Configure trusted CAs
+	if kind.HasTrustedCAs(cfg) {
+		startPhase(phaseTrustedCAs)
+		updateOp("Validating CA certificates...", -1)
+		var caSummary *kind.TrustedCAsSummary
+		var validateErr error
+		if ctrl != nil {
+			// Dashboard mode: execute directly
+			caSummary, validateErr = kind.ValidateTrustedCAs(cfg)
+		} else {
+			// Print mode: use spinner
+			validateErr = ui.RunSpinnerWithContext(ctx, "Validating CA certificates", func(spinnerCtx context.Context) error {
+				var err error
+				caSummary, err = kind.ValidateTrustedCAs(cfg)
+				return err
+			})
+		}
+		if validateErr != nil {
+			return handleFailure(phaseTrustedCAs, fmt.Errorf("failed to configure trusted CAs: %w", validateErr))
+		}
+		completePhase(phaseTrustedCAs, fmt.Sprintf("%d registry CA(s), %d workload CA(s)", caSummary.RegistryCount, caSummary.WorkloadCount))
+	}
+
+	// Phase: Create Kind cluster
+	startPhase(phaseCluster)
 	exists, err := kind.ClusterExists(cfg.Cluster.Name)
 	if err != nil {
-		printError("Failed to check cluster status: %v", err)
-		return err
+		return handleFailure(phaseCluster, fmt.Errorf("failed to check cluster status: %w", err))
 	}
 
 	if exists {
-		printWarn("Cluster '%s' already exists, skipping creation", cfg.Cluster.Name)
+		skipPhase(phaseCluster, "already exists")
 	} else {
-		if err := ui.RunClusterCreate(ctx, cfg.Cluster.Name, func(ctx context.Context, updates chan<- kind.StepUpdate) error {
-			logger := kind.NewLogger(updates)
-			return kind.CreateClusterWithProgress(ctx, cfg, logger)
-		}); err != nil {
-			printError("Failed to create cluster: %v", err)
-			return err
+		// Display cluster configuration details
+		nodeImage, imageSource := kind.GetNodeImage(cfg)
+		if ctrl != nil {
+			if nodeImage != "" {
+				log(fmt.Sprintf("Node Image: %s (%s)", nodeImage, imageSource))
+			} else {
+				log(fmt.Sprintf("Node Image: Kind default (%s)", imageSource))
+			}
+		} else {
+			if nodeImage != "" {
+				fmt.Println(ui.KeyValueIndented("Node Image", ui.Code(nodeImage), 2))
+				fmt.Println(ui.KeyValueIndented("Source", imageSource, 2))
+			} else {
+				fmt.Println(ui.KeyValueIndented("Node Image", ui.Muted("Kind default"), 2))
+				fmt.Println(ui.KeyValueIndented("Source", imageSource, 2))
+			}
+			fmt.Println()
+		}
+
+		// Create cluster with progress updates
+		if ctrl != nil {
+			// Dashboard mode: send updates via controller
+			logger := kind.NewDashboardLogger(func(step string) {
+				updateOp(step, -1)
+			})
+			if err := kind.CreateClusterWithProgress(ctx, cfg, logger); err != nil {
+				return handleFailure(phaseCluster, fmt.Errorf("failed to create cluster: %w", err))
+			}
+		} else {
+			// Print mode: use multi-step UI
+			if err := ui.RunClusterCreate(ctx, cfg.Cluster.Name, func(ctx context.Context, updates chan<- ui.StepUpdate) error {
+				logger := kind.NewLogger(updates)
+				return kind.CreateClusterWithProgress(ctx, cfg, logger)
+			}); err != nil {
+				return handleFailure(phaseCluster, fmt.Errorf("failed to create cluster: %w", err))
+			}
 		}
 		clusterCreated = true
+		completePhase(phaseCluster, "")
+
+		// Update system CA certificates if workload CAs are configured
+		if len(cfg.Cluster.TrustedCAs.Workloads) > 0 {
+			updateOp("Updating system CA certificates on nodes...", -1)
+			var updateCAErr error
+			if ctrl != nil {
+				updateCAErr = kind.UpdateCACertificates(ctx, cfg.Cluster.Name)
+			} else {
+				updateCAErr = ui.RunSpinnerWithContext(ctx, "Updating system CA certificates on nodes", func(spinnerCtx context.Context) error {
+					return kind.UpdateCACertificates(spinnerCtx, cfg.Cluster.Name)
+				})
+			}
+			if updateCAErr != nil {
+				return handleFailure(phaseCluster, fmt.Errorf("failed to update CA certificates: %w", updateCAErr))
+			}
+		}
 	}
 
 	// Configure registry for cluster nodes if enabled
 	if cfg.Cluster.Registry.Enabled && registryManager != nil {
-		// Configure nodes to use the registry
-		if err := registryManager.ConfigureNodes(ctx, cfg.Cluster.Name); err != nil {
-			printError("Failed to configure registry on nodes: %v", err)
-			rollback()
-			return err
+		updateOp("Configuring registry on cluster nodes...", -1)
+		var configErr error
+		if ctrl != nil {
+			if err := registryManager.ConfigureNodes(ctx, cfg.Cluster.Name); err != nil {
+				configErr = err
+			} else {
+				configErr = registryManager.ConnectToNetwork(ctx, "kind")
+			}
+		} else {
+			configErr = ui.RunSpinnerWithContext(ctx, "Configuring registry on cluster nodes", func(spinnerCtx context.Context) error {
+				if err := registryManager.ConfigureNodes(spinnerCtx, cfg.Cluster.Name); err != nil {
+					return err
+				}
+				return registryManager.ConnectToNetwork(spinnerCtx, "kind")
+			})
+		}
+		if configErr != nil {
+			return handleFailure(phaseCluster, fmt.Errorf("failed to configure registry: %w", configErr))
+		}
+	}
+
+	// Phase: Connect to cluster
+	startPhase(phaseConnect)
+	updateOp("Connecting to cluster...", -1)
+	var kubeClient *kubernetes.Clientset
+	var dynamicClient dynamic.Interface
+	var connectErr error
+
+	connectFn := func() error {
+		var err error
+		kubeClient, err = kind.GetKubeClient(cfg.Cluster.Name)
+		if err != nil {
+			return fmt.Errorf("failed to get kubernetes client: %w", err)
 		}
 
-		// Connect registry to Kind network
-		if err := registryManager.ConnectToNetwork(ctx, "kind"); err != nil {
-			printError("Failed to connect registry to Kind network: %v", err)
-			rollback()
-			return err
+		restConfig, err := kind.GetRESTConfig(cfg.Cluster.Name)
+		if err != nil {
+			return fmt.Errorf("failed to get REST config: %w", err)
 		}
-		printSuccess("Registry configured for cluster nodes")
+
+		dynamicClient, err = dynamic.NewForConfig(restConfig)
+		if err != nil {
+			return fmt.Errorf("failed to create dynamic client: %w", err)
+		}
+		return nil
 	}
 
-	// Get kubernetes client
-	kubeClient, err := kind.GetKubeClient(cfg.Cluster.Name)
-	if err != nil {
-		printError("Failed to get kubernetes client: %v", err)
-		rollback()
-		return err
+	if ctrl != nil {
+		connectErr = connectFn()
+	} else {
+		connectErr = ui.RunSpinnerWithContext(ctx, "Connecting to cluster", func(spinnerCtx context.Context) error {
+			return connectFn()
+		})
 	}
-
-	// Get dynamic client for diagnostics
-	restConfig, err := kind.GetRESTConfig(cfg.Cluster.Name)
-	if err != nil {
-		printError("Failed to get REST config: %v", err)
-		rollback()
-		return err
-	}
-
-	dynamicClient, err := dynamic.NewForConfig(restConfig)
-	if err != nil {
-		printError("Failed to create dynamic client: %v", err)
-		rollback()
-		return err
+	if connectErr != nil {
+		return handleFailure(phaseConnect, connectErr)
 	}
 
 	// Create diagnostics collector
@@ -193,58 +494,149 @@ func runUp(cmd *cobra.Command, args []string) error {
 		dynamicClient: dynamicClient,
 		diagCollector: diagCollector,
 	}
+	completePhase(phaseConnect, "")
 
 	// Create local registry ConfigMap for discovery
 	if cfg.Cluster.Registry.Enabled && registryManager != nil {
 		if err := createRegistryConfigMap(ctx, kubeClient, &cfg.Cluster.Registry); err != nil {
-			printWarn("Failed to create registry ConfigMap: %v", err)
-			// Non-fatal - continue with bootstrap
+			log(fmt.Sprintf("Warning: Failed to create registry ConfigMap: %v", err))
 		}
 	}
 
 	// Create Helm installer for chart installations
 	helmInstaller := helm.NewInstaller(kubeClient)
 
-	// Step 2: Install pre-crossplane charts
-	if !upSkipCharts {
-		if err := installChartsForPhase(ctx, helmInstaller, config.ChartPhasePrecrossplane, rollback, bc); err != nil {
-			return err
+	// Phase: Install pre-crossplane charts
+	if pt.GetPhase(phasePreCrossplane) != nil {
+		if err := installChartsForPhaseWithTracker(ctx, helmInstaller, config.ChartPhasePrecrossplane, bc, pt, phasePreCrossplane, ctrl); err != nil {
+			return handleFailure(phasePreCrossplane, err)
 		}
 	}
 
-	// Step 3: Install Crossplane
+	// Phase: Install Crossplane
 	if !upSkipCrossplane {
-		printInfo("Installing Crossplane %s...", cfg.Crossplane.Version)
+		startPhase(phaseCrossplane)
 		installer := crossplane.NewInstaller(kubeClient)
-		if err := installer.Install(ctx, cfg.Crossplane.Version); err != nil {
-			printError("Failed to install Crossplane: %v", err)
+		crossplaneCfg := cfg.Crossplane
+
+		// Determine repository URL and name
+		repoURL := crossplaneCfg.Repo
+		if repoURL == "" {
+			repoURL = crossplane.CrossplaneRepoURL
+		}
+		repoName := crossplane.CrossplaneRepoName
+		if crossplaneCfg.Repo != "" {
+			repoName = helm.GenerateRepoName(repoURL)
+		}
+
+		// Create values logger for displaying merged values
+		valuesLogger := createValuesLogger(ctrl)
+
+		// Build installation steps
+		steps := []string{
+			"Adding Helm repository",
+			"Creating namespace",
+		}
+		if crossplaneCfg.RegistryCaBundle != nil {
+			steps = append(steps, "Creating registry CA bundle")
+		}
+		steps = append(steps, "Installing Helm chart")
+
+		// Execute installation steps
+		title := fmt.Sprintf("Installing Crossplane %s", crossplaneCfg.Version)
+		var installErr error
+
+		if ctrl != nil {
+			// Dashboard mode: execute steps directly with updates
+			for i, step := range steps {
+				updateOp(step, float64(i)/float64(len(steps)))
+				switch step {
+				case "Adding Helm repository":
+					installErr = installer.AddHelmRepo(ctx, repoName, repoURL)
+				case "Creating namespace":
+					installErr = installer.EnsureNamespace(ctx)
+				case "Creating registry CA bundle":
+					installErr = installer.CreateRegistryCaBundle(ctx, crossplaneCfg.RegistryCaBundle, cfg.Cluster.TrustedCAs.Workloads)
+				case "Installing Helm chart":
+					opts := helm.InstallOptions{
+						ValuesLogger: valuesLogger,
+					}
+					installErr = installer.InstallHelmChartWithOptions(ctx, crossplaneCfg, repoURL, repoName, opts)
+				}
+				if installErr != nil {
+					break
+				}
+			}
+		} else {
+			// Print mode: use progress bar
+			installErr = ui.RunProgressWithContext(ctx, title, steps, func(stepCtx context.Context, step string) error {
+				switch step {
+				case "Adding Helm repository":
+					return installer.AddHelmRepo(stepCtx, repoName, repoURL)
+				case "Creating namespace":
+					return installer.EnsureNamespace(stepCtx)
+				case "Creating registry CA bundle":
+					return installer.CreateRegistryCaBundle(stepCtx, crossplaneCfg.RegistryCaBundle, cfg.Cluster.TrustedCAs.Workloads)
+				case "Installing Helm chart":
+					opts := helm.InstallOptions{
+						ValuesLogger: valuesLogger,
+					}
+					return installer.InstallHelmChartWithOptions(stepCtx, crossplaneCfg, repoURL, repoName, opts)
+				default:
+					return fmt.Errorf("unknown installation step: %s", step)
+				}
+			})
+		}
+
+		if installErr != nil {
 			showHelmDiagnostics(bc, "crossplane", crossplane.CrossplaneNamespace)
-			rollback()
-			return err
+			return handleFailure(phaseCrossplane, fmt.Errorf("failed to install Crossplane: %w", installErr))
 		}
-		printSuccess("Crossplane installed")
 
-		// Wait for Crossplane to be ready with animated spinner
-		if err := ui.RunSpinner("Waiting for Crossplane to be ready", func() error {
-			return installer.WaitForReady(ctx)
-		}); err != nil {
+		// Wait for pods to be ready
+		updateOp("Waiting for Crossplane pods...", -1)
+		var podErr error
+		if ctrl != nil {
+			// Dashboard mode: poll directly
+			podErr = waitForCrossplanePods(ctx, installer, ctrl)
+		} else {
+			// Print mode: use pod table
+			podErr = ui.RunPodTable(ctx, "Waiting for Crossplane pods", func(pollCtx context.Context) ([]ui.PodInfo, bool, error) {
+				podInfos, allReady, err := installer.GetPodStatus(pollCtx)
+				if err != nil {
+					return nil, false, err
+				}
+
+				uiPodInfos := make([]ui.PodInfo, len(podInfos))
+				for i, p := range podInfos {
+					uiPodInfos[i] = ui.PodInfo{
+						Name:    p.Name,
+						Status:  p.Status,
+						Ready:   p.Ready,
+						Message: p.Message,
+					}
+				}
+
+				return uiPodInfos, allReady, nil
+			})
+		}
+		if podErr != nil {
 			showCrossplaneDiagnostics(bc)
-			rollback()
-			return err
+			return handleFailure(phaseCrossplane, podErr)
+		}
+		completePhase(phaseCrossplane, "")
+	}
+
+	// Phase: Install post-crossplane charts
+	if pt.GetPhase(phasePostCrossplane) != nil {
+		if err := installChartsForPhaseWithTracker(ctx, helmInstaller, config.ChartPhasePostCrossplane, bc, pt, phasePostCrossplane, ctrl); err != nil {
+			return handleFailure(phasePostCrossplane, err)
 		}
 	}
 
-	// Step 4: Install post-crossplane charts
-	if !upSkipCharts {
-		if err := installChartsForPhase(ctx, helmInstaller, config.ChartPhasePostCrossplane, rollback, bc); err != nil {
-			return err
-		}
-	}
-
-	// Step 5: Install providers
-	if !upSkipProviders && !upSkipCrossplane && len(cfg.Crossplane.Providers) > 0 {
-		// Build provider names for progress display
-		printInfo("Installing Crossplane providers...")
+	// Phase: Install providers
+	if pt.GetPhase(phaseProviders) != nil {
+		startPhase(phaseProviders)
 		providerNames := make([]string, len(cfg.Crossplane.Providers))
 		providerMap := make(map[string]config.ProviderConfig)
 		for i, p := range cfg.Crossplane.Providers {
@@ -252,111 +644,210 @@ func runUp(cmd *cobra.Command, args []string) error {
 			providerMap[p.Name] = p
 		}
 
-		// Install providers with animated progress bar
+		// Install providers
 		installer := crossplane.NewInstaller(kubeClient)
-		if err := ui.RunProgress("Installing Crossplane providers", providerNames, func(name string) error {
-			provider := providerMap[name]
-			return installer.InstallProvider(ctx, provider.Name, provider.Package)
-		}); err != nil {
-			rollback()
-			return err
+		var providerErr error
+
+		if ctrl != nil {
+			// Dashboard mode: install with updates
+			for i, name := range providerNames {
+				updateOp(fmt.Sprintf("Installing %s...", name), float64(i)/float64(len(providerNames)))
+				provider := providerMap[name]
+				if err := installer.InstallProvider(ctx, provider.Name, provider.Package); err != nil {
+					providerErr = err
+					break
+				}
+			}
+		} else {
+			// Print mode: use progress bar
+			providerErr = ui.RunProgress("Installing providers", providerNames, func(name string) error {
+				provider := providerMap[name]
+				return installer.InstallProvider(ctx, provider.Name, provider.Package)
+			})
 		}
 
-		// Wait for providers to be healthy with animated table
-		if err := ui.RunProviderTable(ctx, "Waiting for providers to be healthy", func(pollCtx context.Context) ([]ui.ProviderInfo, bool, error) {
-			statuses, err := installer.GetProviderStatus(pollCtx)
+		if providerErr != nil {
+			return handleFailure(phaseProviders, providerErr)
+		}
+
+		// Wait for providers to be healthy
+		updateOp("Waiting for providers to be healthy...", -1)
+		var healthErr error
+		if ctrl != nil {
+			healthErr = waitForProviders(ctx, installer, ctrl)
+		} else {
+			healthErr = ui.RunProviderTable(ctx, "Waiting for providers to be healthy", func(pollCtx context.Context) ([]ui.ProviderInfo, bool, error) {
+				statuses, err := installer.GetProviderStatus(pollCtx)
+				if err != nil {
+					return nil, false, nil
+				}
+
+				providers := make([]ui.ProviderInfo, len(statuses))
+				allHealthy := true
+				for i, s := range statuses {
+					providers[i] = ui.ProviderInfo{
+						Name:    s.Name,
+						Package: s.Package,
+						Healthy: s.Healthy,
+						Message: s.Message,
+					}
+					if !s.Healthy {
+						allHealthy = false
+					}
+				}
+
+				return providers, allHealthy && len(providers) > 0, nil
+			})
+		}
+		if healthErr != nil {
+			showProviderDiagnostics(bc)
+			return handleFailure(phaseProviders, healthErr)
+		}
+		completePhase(phaseProviders, fmt.Sprintf("%d provider(s) healthy", len(providerNames)))
+	}
+
+	// Phase: Install post-providers charts
+	if pt.GetPhase(phasePostProviders) != nil {
+		if err := installChartsForPhaseWithTracker(ctx, helmInstaller, config.ChartPhasePostProviders, bc, pt, phasePostProviders, ctrl); err != nil {
+			return handleFailure(phasePostProviders, err)
+		}
+	}
+
+	// Phase: Install final charts
+	if pt.GetPhase(phaseFinal) != nil {
+		if err := installChartsForPhaseWithTracker(ctx, helmInstaller, config.ChartPhaseFinal, bc, pt, phaseFinal, ctrl); err != nil {
+			return handleFailure(phaseFinal, err)
+		}
+	}
+
+	// Phase: Apply compositions
+	if pt.GetPhase(phaseCompositions) != nil {
+		startPhase(phaseCompositions)
+		installer := crossplane.NewInstaller(kubeClient)
+		for _, source := range cfg.Compositions.Sources {
+			updateOp(fmt.Sprintf("Applying %s...", source.Path), -1)
+			if err := installer.ApplyCompositions(ctx, source); err != nil {
+				return handleFailure(phaseCompositions, fmt.Errorf("failed to apply compositions from %s: %w", source.Path, err))
+			}
+		}
+		completePhase(phaseCompositions, fmt.Sprintf("%d source(s) applied", len(cfg.Compositions.Sources)))
+	}
+
+	return nil
+}
+
+// waitForCrossplanePods waits for Crossplane pods to be ready (dashboard mode)
+func waitForCrossplanePods(ctx context.Context, installer *crossplane.Installer, ctrl *ui.DashboardController) error {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			podInfos, allReady, err := installer.GetPodStatus(ctx)
 			if err != nil {
-				return nil, false, nil // Keep trying on error
+				ctrl.Log(fmt.Sprintf("Error checking pods: %v", err))
+				continue
 			}
 
-			providers := make([]ui.ProviderInfo, len(statuses))
+			// Convert to ui.PodInfo and send update
+			uiPods := make([]ui.PodInfo, len(podInfos))
+			for i, p := range podInfos {
+				uiPods[i] = ui.PodInfo{
+					Name:    p.Name,
+					Status:  p.Status,
+					Ready:   p.Ready,
+					Message: p.Message,
+				}
+			}
+			ctrl.UpdatePods(uiPods)
+
+			// Log current status
+			for _, p := range podInfos {
+				if !p.Ready {
+					ctrl.UpdateOperation(fmt.Sprintf("Waiting for %s (%s)", p.Name, p.Status), -1)
+					break
+				}
+			}
+
+			if allReady && len(podInfos) > 0 {
+				return nil
+			}
+		}
+	}
+}
+
+// waitForProviders waits for providers to be healthy (dashboard mode)
+func waitForProviders(ctx context.Context, installer *crossplane.Installer, ctrl *ui.DashboardController) error {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			statuses, err := installer.GetProviderStatus(ctx)
+			if err != nil {
+				continue
+			}
+
+			// Convert provider statuses to PodInfo for display
+			uiPods := make([]ui.PodInfo, len(statuses))
 			allHealthy := true
 			for i, s := range statuses {
-				providers[i] = ui.ProviderInfo{
+				status := "Pending"
+				if s.Healthy {
+					status = "Running"
+				} else if s.Message != "" {
+					status = "Installing"
+				}
+				uiPods[i] = ui.PodInfo{
 					Name:    s.Name,
-					Package: s.Package,
-					Healthy: s.Healthy,
+					Status:  status,
+					Ready:   s.Healthy,
 					Message: s.Message,
 				}
 				if !s.Healthy {
 					allHealthy = false
 				}
 			}
+			ctrl.UpdatePods(uiPods)
 
-			return providers, allHealthy && len(providers) > 0, nil
-		}); err != nil {
-			showProviderDiagnostics(bc)
-			rollback()
-			return err
-		}
-	}
-
-	// Step 6: Install post-providers charts
-	if !upSkipCharts {
-		if err := installChartsForPhase(ctx, helmInstaller, config.ChartPhasePostProviders, rollback, bc); err != nil {
-			return err
-		}
-	}
-
-	// Step 7: Install External Secrets Operator
-	if !upSkipESO && cfg.ESO.Enabled {
-		printInfo("Installing External Secrets Operator %s...", cfg.ESO.Version)
-		esoInstaller := eso.NewInstaller(kubeClient)
-		if err := esoInstaller.Install(ctx, cfg.ESO.Version); err != nil {
-			printError("Failed to install ESO: %v", err)
-			showHelmDiagnostics(bc, "external-secrets", eso.ESONamespace)
-			rollback()
-			return err
-		}
-		printSuccess("External Secrets Operator installed")
-
-		// Wait for ESO to be ready with animated spinner
-		if err := ui.RunSpinner("Waiting for ESO to be ready", func() error {
-			return esoInstaller.WaitForReady(ctx)
-		}); err != nil {
-			showESODiagnostics(bc)
-			rollback()
-			return err
-		}
-	}
-
-	// Step 8: Install post-eso charts (default phase)
-	if !upSkipCharts {
-		if err := installChartsForPhase(ctx, helmInstaller, config.ChartPhasePostESO, rollback, bc); err != nil {
-			return err
-		}
-	}
-
-	// Step 9: Apply compositions
-	if !upSkipCompositions && len(cfg.Compositions.Sources) > 0 {
-		printInfo("Applying compositions...")
-		installer := crossplane.NewInstaller(kubeClient)
-		for _, source := range cfg.Compositions.Sources {
-			if err := installer.ApplyCompositions(ctx, source); err != nil {
-				printError("Failed to apply compositions from %s: %v", source.Path, err)
-				rollback()
-				return err
+			// Update operation status
+			for _, s := range statuses {
+				if !s.Healthy {
+					ctrl.UpdateOperation(fmt.Sprintf("Waiting for %s...", s.Name), -1)
+					break
+				}
 			}
-			printSuccess("Compositions applied from %s", source.Path)
+
+			if allHealthy && len(statuses) > 0 {
+				return nil
+			}
 		}
 	}
-
-	// Success!
-	fmt.Println()
-	printSuccess("Cluster ready!")
-	fmt.Println()
-	printStep("kubectl cluster-info --context %s", cfg.GetKubeContext())
-	fmt.Println()
-
-	return nil
 }
 
 // installChartsForPhase installs all charts configured for a specific phase
-func installChartsForPhase(ctx context.Context, helmInstaller *helm.Installer, phase string, rollback func(), bc *bootstrapContext) error {
+// installChartsForPhaseWithTracker installs charts and tracks progress with the PhaseTracker
+func installChartsForPhaseWithTracker(ctx context.Context, helmInstaller *helm.Installer, phase string, bc *bootstrapContext, pt *ui.PhaseTracker, phaseName string, ctrl *ui.DashboardController) error {
 	charts := getChartsForPhase(phase)
 	if len(charts) == 0 {
 		return nil
 	}
+
+	// Start phase
+	if ctrl != nil {
+		ctrl.StartPhase(phaseName)
+	} else {
+		pt.StartPhase(phaseName)
+	}
+
+	// Create values logger for displaying merged values
+	valuesLogger := createValuesLogger(ctrl)
 
 	// Build chart names for progress display
 	chartNames := make([]string, len(charts))
@@ -368,26 +859,51 @@ func installChartsForPhase(ctx context.Context, helmInstaller *helm.Installer, p
 
 	// Track failed chart for diagnostics
 	var failedChart config.ChartConfig
+	var installErr error
 
-	// Install charts with animated progress bar
-	title := fmt.Sprintf("Installing %s charts", phase)
-	err := ui.RunProgress(title, chartNames, func(name string) error {
-		chart := chartMap[name]
-		if installErr := helmInstaller.InstallChartFromConfig(ctx, chart); installErr != nil {
-			failedChart = chart
-			return installErr
+	// Create install options with values logger
+	opts := helm.InstallOptions{
+		ValuesLogger: valuesLogger,
+	}
+
+	if ctrl != nil {
+		// Dashboard mode: install with updates
+		for i, name := range chartNames {
+			ctrl.UpdateOperation(fmt.Sprintf("Installing %s...", name), float64(i)/float64(len(chartNames)))
+			chart := chartMap[name]
+			if err := helmInstaller.InstallChartFromConfigWithOptions(ctx, chart, opts); err != nil {
+				failedChart = chart
+				installErr = err
+				break
+			}
 		}
-		return nil
-	})
+	} else {
+		// Print mode: use progress bar
+		title := fmt.Sprintf("Installing %s charts", phase)
+		installErr = ui.RunProgress(title, chartNames, func(name string) error {
+			chart := chartMap[name]
+			if err := helmInstaller.InstallChartFromConfigWithOptions(ctx, chart, opts); err != nil {
+				failedChart = chart
+				return err
+			}
+			return nil
+		})
+	}
 
-	if err != nil {
+	if installErr != nil {
 		if failedChart.Name != "" {
 			showChartDiagnostics(bc, failedChart)
 		}
-		rollback()
-		return err
+		return installErr
 	}
 
+	// Complete phase
+	message := fmt.Sprintf("%d chart(s) installed", len(charts))
+	if ctrl != nil {
+		ctrl.CompletePhase(phaseName, message)
+	} else {
+		pt.CompletePhaseWithMessage(message)
+	}
 	return nil
 }
 
@@ -427,22 +943,6 @@ func showProviderDiagnostics(bc *bootstrapContext) {
 	diagCtx := diagnostics.DefaultContext(diagnostics.ComponentProviders)
 	// Don't filter by label - we want all pods in crossplane-system
 	diagCtx.LabelSelector = ""
-	report, err := bc.diagCollector.Collect(bc.ctx, diagCtx)
-	if err != nil {
-		printVerbose("Failed to collect diagnostics: %v", err)
-		return
-	}
-
-	report.Print(os.Stdout)
-}
-
-// showESODiagnostics shows diagnostics for ESO failures
-func showESODiagnostics(bc *bootstrapContext) {
-	if bc == nil || bc.diagCollector == nil {
-		return
-	}
-
-	diagCtx := diagnostics.DefaultContext(diagnostics.ComponentESO)
 	report, err := bc.diagCollector.Collect(bc.ctx, diagCtx)
 	if err != nil {
 		printVerbose("Failed to collect diagnostics: %v", err)

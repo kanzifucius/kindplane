@@ -29,6 +29,7 @@ var (
 	dumpIncludeSystem bool
 	dumpDiscoverXRs   bool
 	dumpNoReadme      bool
+	dumpNoKindConfig  bool
 )
 
 var dumpCmd = &cobra.Command{
@@ -42,6 +43,7 @@ This command exports:
   - Composite Resources (XRs) and Claims (optional discovery)
   - External Secrets Operator SecretStores and ExternalSecrets
   - Custom namespaces, Secrets (redacted), and ConfigMaps
+  - Kind cluster configuration (kind-config.yaml) for cluster recreation
 
 The exported resources are cleaned for GitOps:
   - Cluster-specific metadata removed (uid, resourceVersion, managedFields)
@@ -73,7 +75,10 @@ The exported resources are cleaned for GitOps:
   kindplane dump --include-system
 
   # Discover and dump composite resource instances
-  kindplane dump --discover-composites`,
+  kindplane dump --discover-composites
+
+  # Skip the Kind cluster configuration
+  kindplane dump --no-kind-config`,
 	RunE: runDump,
 }
 
@@ -91,6 +96,7 @@ func init() {
 	dumpCmd.Flags().BoolVar(&dumpIncludeSystem, "include-system", false, "include system namespaces (kube-system, etc.)")
 	dumpCmd.Flags().BoolVar(&dumpDiscoverXRs, "discover-composites", true, "discover and dump composite resource instances")
 	dumpCmd.Flags().BoolVar(&dumpNoReadme, "no-readme", false, "skip generating README.md")
+	dumpCmd.Flags().BoolVar(&dumpNoKindConfig, "no-kind-config", false, "skip including the Kind cluster configuration")
 }
 
 func runDump(cmd *cobra.Command, args []string) error {
@@ -165,6 +171,16 @@ func runDump(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Generate Kind config if requested
+	if !dumpNoKindConfig {
+		kindConfig, err := kind.BuildKindConfig(cfg)
+		if err != nil {
+			printWarn("Warning: Failed to generate Kind config: %v", err)
+		} else {
+			result.KindConfig = kindConfig
+		}
+	}
+
 	// Report any non-fatal errors
 	for _, e := range result.Errors {
 		printWarn("Warning: %v", e)
@@ -200,6 +216,10 @@ func runDump(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	printSuccess("Dump completed successfully")
 	dump.WriteStats(os.Stdout, result.Stats)
+
+	if result.KindConfig != "" {
+		printStep("Kind cluster configuration included (kind-config.yaml)")
+	}
 
 	if !dumpStdout {
 		fmt.Println()
@@ -252,6 +272,9 @@ func runDumpDryRun(opts dump.DumpOptions) error {
 	}
 	if opts.DiscoverComposites {
 		printStep("  Discover composite resources: yes")
+	}
+	if !dumpNoKindConfig {
+		printStep("  Include Kind config: yes")
 	}
 	fmt.Println()
 

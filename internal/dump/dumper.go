@@ -68,6 +68,10 @@ type DumpResult struct {
 
 	// DiscoveredXRDs contains XRD info for discovered composite resources
 	DiscoveredXRDs []XRDInfo
+
+	// KindConfig contains the generated Kind cluster configuration YAML.
+	// This is not fetched from the cluster but generated from kindplane.yaml.
+	KindConfig string
 }
 
 // DumpStats contains statistics about the dump operation

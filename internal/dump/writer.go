@@ -78,6 +78,14 @@ func (w *Writer) writeFiles(result *DumpResult) error {
 		return fmt.Errorf("creating output directory: %w", err)
 	}
 
+	// Write Kind config if present
+	if result.KindConfig != "" {
+		kindConfigPath := filepath.Join(w.OutputDir, "kind-config.yaml")
+		if err := os.WriteFile(kindConfigPath, []byte(result.KindConfig), 0644); err != nil {
+			return fmt.Errorf("writing kind-config.yaml: %w", err)
+		}
+	}
+
 	// Get sorted resource types for consistent output
 	resourceTypes := w.getSortedResourceTypes(result)
 
@@ -145,9 +153,19 @@ func (w *Writer) writeSingleFile(result *DumpResult) error {
 
 // writeToWriter writes all resources to a writer as multi-document YAML
 func (w *Writer) writeToWriter(result *DumpResult, writer io.Writer) error {
+	first := true
+
+	// Write Kind config first if present
+	if result.KindConfig != "" {
+		header := "# Kind cluster configuration\n# Use: kind create cluster --config kind-config.yaml\n"
+		if _, err := writer.Write([]byte(header + result.KindConfig)); err != nil {
+			return err
+		}
+		first = false
+	}
+
 	resourceTypes := w.getSortedResourceTypes(result)
 
-	first := true
 	for _, rt := range resourceTypes {
 		objects := result.Resources[rt]
 		if len(objects) == 0 {
@@ -283,6 +301,11 @@ func (w *Writer) writeReadme(result *DumpResult) error {
 	sb.WriteString("```\n")
 	sb.WriteString(w.OutputDir + "/\n")
 
+	// Show kind-config.yaml if present
+	if result.KindConfig != "" {
+		sb.WriteString("├── kind-config.yaml\n")
+	}
+
 	// List directories
 	dirs := make(map[string]bool)
 	for _, rt := range resourceTypes {
@@ -303,6 +326,16 @@ func (w *Writer) writeReadme(result *DumpResult) error {
 	}
 	sb.WriteString("└── README.md\n")
 	sb.WriteString("```\n")
+
+	// Add Kind config section if present
+	if result.KindConfig != "" {
+		sb.WriteString("\n## Kind Cluster Configuration\n\n")
+		sb.WriteString("The `kind-config.yaml` file contains the Kind cluster configuration derived from `kindplane.yaml`.\n\n")
+		sb.WriteString("To recreate the cluster using Kind directly:\n\n")
+		sb.WriteString("```bash\n")
+		sb.WriteString("kind create cluster --config kind-config.yaml\n")
+		sb.WriteString("```\n")
+	}
 
 	// Add discovered XRDs if any
 	if len(result.DiscoveredXRDs) > 0 {

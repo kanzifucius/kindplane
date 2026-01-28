@@ -14,9 +14,6 @@
     "credentials": {
       "$ref": "#/definitions/CredentialsConfig"
     },
-    "eso": {
-      "$ref": "#/definitions/ESOConfig"
-    },
     "charts": {
       "type": "array",
       "description": "Additional Helm charts to install during cluster setup",
@@ -73,6 +70,10 @@
         },
         "trustedCAs": {
           "$ref": "#/definitions/TrustedCAsConfig"
+        },
+        "nodeImage": {
+          "type": "string",
+          "description": "Full Kind node image path. Use when your environment requires pulling images through a proxy registry like Artifactory. If not specified, defaults to 'kindest/node:v<kubernetesVersion>'. Examples: 'artifactory.example.com/kindest/node:v1.29.0' or 'artifactory.example.com/docker.io/kindest/node:v1.29.0'. Ensure the proxy registry is configured in trustedCAs if it uses custom certificates."
         },
         "rawConfigPath": {
           "type": "string",
@@ -265,15 +266,68 @@
           "minLength": 1,
           "examples": ["1.15.0", "1.14.0"]
         },
+        "repo": {
+          "type": "string",
+          "description": "Custom Helm repository URL (defaults to https://charts.crossplane.io/stable)",
+          "format": "uri"
+        },
+        "values": {
+          "type": "object",
+          "description": "Inline Helm values for Crossplane installation",
+          "additionalProperties": true
+        },
+        "valuesFiles": {
+          "type": "array",
+          "description": "Paths to external values files",
+          "items": {
+            "type": "string"
+          }
+        },
         "providers": {
           "type": "array",
           "description": "Crossplane providers to install",
           "items": {
             "$ref": "#/definitions/ProviderConfig"
           }
+        },
+        "registryCaBundle": {
+          "$ref": "#/definitions/RegistryCaBundleConfig"
         }
       },
       "required": ["version"],
+      "additionalProperties": false
+    },
+    "RegistryCaBundleConfig": {
+      "type": "object",
+      "description": "CA bundle configuration for Crossplane registry access. Required when pulling Configuration and Provider packages from private registries with custom certificates. Multiple certificates can be specified and will be bundled together.",
+      "properties": {
+        "caFiles": {
+          "type": "array",
+          "description": "Direct paths to CA certificate files on the host. Multiple certificates will be bundled together.",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "examples": [["./certs/corporate-root-ca.crt", "./certs/proxy-ca.crt"]]
+        },
+        "workloadCARefs": {
+          "type": "array",
+          "description": "References to existing workload CAs by name (must be defined in cluster.trustedCAs.workloads). Multiple references allowed.",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "examples": [["corporate-root-ca", "internal-services-ca"]]
+        }
+      },
+      "anyOf": [
+        {
+          "required": ["caFiles"]
+        },
+        {
+          "required": ["workloadCARefs"]
+        }
+      ],
       "additionalProperties": false
     },
     "ProviderConfig": {
@@ -361,33 +415,6 @@
       },
       "additionalProperties": false
     },
-    "ESOConfig": {
-      "type": "object",
-      "description": "External Secrets Operator configuration",
-      "properties": {
-        "enabled": {
-          "type": "boolean",
-          "description": "Enable External Secrets Operator installation",
-          "default": true
-        },
-        "version": {
-          "type": "string",
-          "description": "ESO version to install (required when enabled is true)",
-          "examples": ["0.9.11", "0.9.10"]
-        }
-      },
-      "if": {
-        "properties": {
-          "enabled": {
-            "const": true
-          }
-        }
-      },
-      "then": {
-        "required": ["version"]
-      },
-      "additionalProperties": false
-    },
     "ChartConfig": {
       "type": "object",
       "description": "Helm chart installation configuration",
@@ -425,8 +452,8 @@
         "phase": {
           "type": "string",
           "description": "Installation phase determining when the chart is installed",
-          "enum": ["pre-crossplane", "post-crossplane", "post-providers", "post-eso"],
-          "default": "post-eso"
+          "enum": ["pre-crossplane", "post-crossplane", "post-providers", "final", "post-eso"],
+          "default": "final"
         },
         "wait": {
           "type": "boolean",

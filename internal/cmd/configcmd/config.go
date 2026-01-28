@@ -11,11 +11,13 @@ var ConfigCmd = &cobra.Command{
 	Long: `View and compare kindplane configuration files.
 
 Available subcommands:
-  show - Display the current configuration
-  diff - Compare two configuration files`,
+  show - Display the current kindplane configuration
+  diff - Compare two configuration files
+  kind - Output the Kind cluster configuration for use with kind CLI`,
 }
 
 func init() {
 	ConfigCmd.AddCommand(showCmd)
 	ConfigCmd.AddCommand(diffCmd)
+	ConfigCmd.AddCommand(kindCmd)
 }

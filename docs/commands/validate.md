@@ -98,7 +98,7 @@ Fix: Ensure the package URL follows the format: `registry/namespace/name:version
 ### Invalid Chart Phase
 
 ```
-✗ charts[0].phase: must be one of: pre-crossplane, post-crossplane, post-providers, post-eso
+✗ charts[0].phase: must be one of: pre-crossplane, post-crossplane, post-providers, final
 ```
 
 Fix: Use a valid phase value.

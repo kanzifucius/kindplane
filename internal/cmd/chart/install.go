@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
 	"github.com/kanzi/kindplane/internal/config"
 	"github.com/kanzi/kindplane/internal/helm"
 	"github.com/kanzi/kindplane/internal/kind"
+	"github.com/kanzi/kindplane/internal/ui"
 )
 
 var (
@@ -76,7 +76,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	// Load config to get cluster name
 	cfg, err := config.Load("")
 	if err != nil {
-		color.Red("✗ %v", err)
+		fmt.Println(ui.Error("%v", err))
 		return err
 	}
 
@@ -86,32 +86,32 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	// Check cluster exists
 	exists, err := kind.ClusterExists(cfg.Cluster.Name)
 	if err != nil {
-		color.Red("✗ Failed to check cluster: %v", err)
+		fmt.Println(ui.Error("Failed to check cluster: %v", err))
 		return err
 	}
 	if !exists {
-		color.Red("✗ Cluster '%s' not found. Run 'kindplane up' first.", cfg.Cluster.Name)
+		fmt.Println(ui.Error("Cluster '%s' not found. Run 'kindplane up' first.", cfg.Cluster.Name))
 		return fmt.Errorf("cluster not found")
 	}
 
 	// Get kube client
 	kubeClient, err := kind.GetKubeClient(cfg.Cluster.Name)
 	if err != nil {
-		color.Red("✗ Failed to connect to cluster: %v", err)
+		fmt.Println(ui.Error("Failed to connect to cluster: %v", err))
 		return err
 	}
 
 	// Parse --set values
 	setValues, err := helm.ParseSetValues(installSetValues)
 	if err != nil {
-		color.Red("✗ Failed to parse --set values: %v", err)
+		fmt.Println(ui.Error("Failed to parse --set values: %v", err))
 		return err
 	}
 
 	// Merge values: files first, then --set values (highest priority)
 	mergedValues, err := helm.MergeValues(installValuesFiles, setValues)
 	if err != nil {
-		color.Red("✗ Failed to merge values: %v", err)
+		fmt.Println(ui.Error("Failed to merge values: %v", err))
 		return err
 	}
 
@@ -131,13 +131,13 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	// Install chart
-	color.Cyan("• Installing chart %s (%s/%s)...", releaseName, installRepo, installChart)
+	fmt.Println(ui.Info("Installing chart %s (%s/%s)...", releaseName, installRepo, installChart))
 	helmInstaller := helm.NewInstaller(kubeClient)
 	if err := helmInstaller.InstallChartFromConfig(ctx, chartCfg); err != nil {
-		color.Red("✗ Failed to install chart: %v", err)
+		fmt.Println(ui.Error("Failed to install chart: %v", err))
 		return err
 	}
 
-	color.Green("✓ Chart %s installed in namespace %s", releaseName, installNamespace)
+	fmt.Println(ui.Success("Chart %s installed in namespace %s", releaseName, installNamespace))
 	return nil
 }

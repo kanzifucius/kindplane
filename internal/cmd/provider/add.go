@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
 	"github.com/kanzi/kindplane/internal/config"
 	"github.com/kanzi/kindplane/internal/crossplane"
 	"github.com/kanzi/kindplane/internal/kind"
+	"github.com/kanzi/kindplane/internal/ui"
 )
 
 var (
@@ -51,7 +51,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	// Load config
 	cfg, err := config.Load("")
 	if err != nil {
-		color.Red("✗ %v", err)
+		fmt.Println(ui.Error("%v", err))
 		return err
 	}
 
@@ -61,37 +61,37 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	// Check cluster exists
 	exists, err := kind.ClusterExists(cfg.Cluster.Name)
 	if err != nil {
-		color.Red("✗ Failed to check cluster: %v", err)
+		fmt.Println(ui.Error("Failed to check cluster: %v", err))
 		return err
 	}
 	if !exists {
-		color.Red("✗ Cluster '%s' not found. Run 'kindplane up' first.", cfg.Cluster.Name)
+		fmt.Println(ui.Error("Cluster '%s' not found. Run 'kindplane up' first.", cfg.Cluster.Name))
 		return fmt.Errorf("cluster not found")
 	}
 
 	// Get kube client
 	kubeClient, err := kind.GetKubeClient(cfg.Cluster.Name)
 	if err != nil {
-		color.Red("✗ Failed to connect to cluster: %v", err)
+		fmt.Println(ui.Error("Failed to connect to cluster: %v", err))
 		return err
 	}
 
 	// Install provider
-	color.Cyan("• Installing %s (%s)...", providerName, addPackage)
+	fmt.Println(ui.Info("Installing %s (%s)...", providerName, addPackage))
 	installer := crossplane.NewInstaller(kubeClient)
 	if err := installer.InstallProvider(ctx, providerName, addPackage); err != nil {
-		color.Red("✗ Failed to install provider: %v", err)
+		fmt.Println(ui.Error("Failed to install provider: %v", err))
 		return err
 	}
 
 	if addWait {
-		color.Cyan("• Waiting for provider to be healthy...")
+		fmt.Println(ui.Info("Waiting for provider to be healthy..."))
 		if err := installer.WaitForProviders(ctx); err != nil {
-			color.Red("✗ Provider failed to become healthy: %v", err)
+			fmt.Println(ui.Error("Provider failed to become healthy: %v", err))
 			return err
 		}
 	}
 
-	color.Green("✓ Provider %s installed (%s)", providerName, addPackage)
+	fmt.Println(ui.Success("Provider %s installed (%s)", providerName, addPackage))
 	return nil
 }
