@@ -24,6 +24,7 @@ It automates the tedious process of setting up a local Kubernetes development en
 - 🚀 **One-command bootstrap** - Create fully configured Kind clusters with a single command
 - ⚙️ **Crossplane integration** - Automatic installation and configuration of Crossplane
 - 📦 **Provider management** - Install and manage Crossplane providers (AWS, Azure, GCP, etc.)
+- 🚀 **Image pre-loading** - Automatically pre-load images from local Docker cache for faster bootstrapping
 - 🔐 **External Secrets Operator** - Optional ESO installation for secrets management
 - 📊 **Helm chart support** - Install any Helm chart with configurable phases
 - 🎨 **Beautiful CLI** - Rich terminal output with colors, icons, and progress indicators
@@ -120,13 +121,24 @@ Get a local Crossplane development environment running in minutes:
 kindplane init
 
 # Create and bootstrap the cluster
+# Images are automatically pre-loaded from your local Docker cache for faster startup
 kindplane up
+
+# Or auto-pull missing images on first run
+kindplane up --pull-images
 
 # Check status
 kindplane status
 
 # Delete the cluster
 kindplane down --force
+```
+
+**💡 Tip**: Pre-pull images once for faster subsequent bootstraps:
+```bash
+docker pull crossplane/crossplane:v1.15.0
+docker pull xpkg.upbound.io/upbound/provider-aws-controller:v1.1.0
+# Then kindplane up will use cached images
 ```
 
 ## Configuration
@@ -212,6 +224,11 @@ crossplane:
       package: xpkg.upbound.io/upbound/provider-aws-s3:v1.1.0
     - name: provider-kubernetes
       package: xpkg.upbound.io/crossplane-contrib/provider-kubernetes:v0.11.0
+  # Image caching (enabled by default)
+  # imageCache:
+  #   enabled: true
+  #   preloadProviders: true
+  #   preloadCrossplane: true
 
 # External Secrets Operator
 eso:
@@ -282,12 +299,15 @@ Create and bootstrap a Kind cluster.
 
 ```bash
 kindplane up                      # Full bootstrap
+kindplane up --pull-images        # Auto-pull missing images from registry
 kindplane up --skip-providers     # Skip provider installation
 kindplane up --skip-eso           # Skip ESO installation
 kindplane up --skip-charts        # Skip all Helm charts
 kindplane up --rollback-on-failure # Delete cluster if bootstrap fails
 kindplane up --timeout 15m        # Custom timeout
 ```
+
+**Image Pre-loading**: By default, kindplane automatically checks your local Docker daemon for Crossplane and provider images and pre-loads them into the Kind cluster, significantly reducing bootstrap time. Use `--pull-images` to automatically pull missing images from registries. See [Image Cache Configuration](docs/configuration/image-cache.md) for details.
 
 ### `kindplane down`
 
