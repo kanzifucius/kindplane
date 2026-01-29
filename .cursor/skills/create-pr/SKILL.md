@@ -1,3 +1,9 @@
+---
+name: create-pr
+description: Create GitHub Pull Request
+disable-model-invocation: true
+---
+
 # Create GitHub Pull Request
 
 Analyse the current branch, check for uncommitted changes, commit if needed using conventional commits, and create a well-structured GitHub Pull Request.
