@@ -7,12 +7,36 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
+
+// -----------------------------------------------------------------------------
+// Dashboard Key Bindings
+// -----------------------------------------------------------------------------
+
+// dashboardKeyMap defines the key bindings for the dashboard
+type dashboardKeyMap struct {
+	Verbose key.Binding
+	Pods    key.Binding
+	Extend  key.Binding
+	Quit    key.Binding
+}
+
+// ShortHelp returns key bindings for the short help view (footer)
+func (k dashboardKeyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Verbose, k.Pods, k.Extend, k.Quit}
+}
+
+// FullHelp returns key bindings for the full help view (not used)
+func (k dashboardKeyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{{k.Verbose, k.Pods}, {k.Extend, k.Quit}}
+}
 
 // -----------------------------------------------------------------------------
 // Dashboard Messages
@@ -121,7 +145,8 @@ type DashboardModel struct {
 	viewport viewport.Model // For verbose log view
 
 	// Log buffer
-	logLines []string
+	logLines      []string
+	logAutoScroll bool // Auto-scroll to bottom on new logs (disabled when user scrolls up)
 
 	// UI state
 	verbose   bool // Show detailed log output
@@ -138,6 +163,10 @@ type DashboardModel struct {
 
 	// Pod status
 	pods []PodInfo
+
+	// Help component
+	help   help.Model
+	keyMap dashboardKeyMap
 
 	// Cancellation
 	state *CancellableState
@@ -180,6 +209,42 @@ func NewDashboardModel(tracker *PhaseTracker, parentCtx context.Context, opts ..
 		progress.WithWidth(40),
 	)
 
+	// Create viewport for log scrolling with default dimensions
+	vp := viewport.New(DashboardMinWidth-4, DashboardLogBuffer)
+
+	// Create help model with styled keybindings
+	h := help.New()
+	h.ShortSeparator = "  "
+	h.Styles.ShortKey = lipgloss.NewStyle().
+		Foreground(ColorSecondary).
+		Bold(true)
+	h.Styles.ShortDesc = lipgloss.NewStyle().
+		Foreground(ColorMuted)
+	h.Styles.ShortSeparator = lipgloss.NewStyle().
+		Foreground(ColorDim)
+
+	// Create key bindings
+	keys := dashboardKeyMap{
+		Verbose: key.NewBinding(
+			key.WithKeys("v"),
+			key.WithHelp("v", "verbose"),
+		),
+		Pods: key.NewBinding(
+			key.WithKeys("p"),
+			key.WithHelp("p", "pods"),
+		),
+		Extend: key.NewBinding(
+			key.WithKeys("e"),
+			key.WithHelp("e", "extend"),
+		),
+		Quit: key.NewBinding(
+			key.WithKeys("q"),
+			key.WithHelp("q", "quit"),
+		),
+	}
+	// Start with extend disabled (enabled when timeout approaching)
+	keys.Extend.SetEnabled(false)
+
 	m := DashboardModel{
 		tracker:         tracker,
 		startTime:       time.Now(),
@@ -188,7 +253,11 @@ func NewDashboardModel(tracker *PhaseTracker, parentCtx context.Context, opts ..
 		currentProgress: -1,                               // Start with spinner
 		spinner:         s,
 		progress:        prog,
+		viewport:        vp,
 		logLines:        make([]string, 0, DashboardLogBuffer),
+		logAutoScroll:   true, // Start with auto-scroll enabled
+		help:            h,
+		keyMap:          keys,
 		state:           state,
 		width:           DashboardMinWidth,
 		height:          24,
@@ -237,6 +306,12 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "v":
 			m.verbose = !m.verbose
+			// Update key binding description
+			if m.verbose {
+				m.keyMap.Verbose.SetHelp("v", "compact")
+			} else {
+				m.keyMap.Verbose.SetHelp("v", "verbose")
+			}
 			return m, nil
 
 		case "e":
@@ -250,7 +325,56 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "p":
 			m.showPods = !m.showPods
+			// Update key binding description
+			if m.showPods {
+				m.keyMap.Pods.SetHelp("p", "hide pods")
+			} else {
+				m.keyMap.Pods.SetHelp("p", "pods")
+			}
 			return m, nil
+
+		// Log viewport scrolling (only when verbose mode is active)
+		case "up", "k":
+			if m.verbose {
+				m.viewport.LineUp(1)
+				m.logAutoScroll = m.viewport.AtBottom()
+				return m, nil
+			}
+
+		case "down", "j":
+			if m.verbose {
+				m.viewport.LineDown(1)
+				m.logAutoScroll = m.viewport.AtBottom()
+				return m, nil
+			}
+
+		case "pgup", "ctrl+u":
+			if m.verbose {
+				m.viewport.HalfViewUp()
+				m.logAutoScroll = m.viewport.AtBottom()
+				return m, nil
+			}
+
+		case "pgdown", "ctrl+d":
+			if m.verbose {
+				m.viewport.HalfViewDown()
+				m.logAutoScroll = m.viewport.AtBottom()
+				return m, nil
+			}
+
+		case "home", "g":
+			if m.verbose {
+				m.viewport.GotoTop()
+				m.logAutoScroll = false
+				return m, nil
+			}
+
+		case "end", "G":
+			if m.verbose {
+				m.viewport.GotoBottom()
+				m.logAutoScroll = true
+				return m, nil
+			}
 		}
 
 	case tea.WindowSizeMsg:
@@ -266,8 +390,10 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		remaining := time.Until(m.deadline)
 		if remaining < 2*time.Minute && remaining > 0 {
 			m.showExtend = true
+			m.keyMap.Extend.SetEnabled(true)
 		} else {
 			m.showExtend = false
+			m.keyMap.Extend.SetEnabled(false)
 		}
 
 		// Check if timed out
@@ -373,13 +499,22 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *DashboardModel) addLogLine(line string) {
 	m.logLines = append(m.logLines, line)
-	// Keep buffer size limited
-	if len(m.logLines) > DashboardLogBuffer*2 {
-		m.logLines = m.logLines[len(m.logLines)-DashboardLogBuffer:]
+	// Keep buffer size limited (larger to allow scroll history)
+	maxBuffer := DashboardLogBuffer * 10 // Store up to 150 lines of history
+	if len(m.logLines) > maxBuffer {
+		m.logLines = m.logLines[len(m.logLines)-maxBuffer:]
 	}
-	// Update viewport content
-	m.viewport.SetContent(strings.Join(m.logLines, "\n"))
-	m.viewport.GotoBottom()
+	// Update viewport content with wrapped lines
+	wrappedLines := make([]string, len(m.logLines))
+	wrapStyle := lipgloss.NewStyle().Width(m.viewport.Width)
+	for i, l := range m.logLines {
+		wrappedLines[i] = wrapStyle.Render(l)
+	}
+	m.viewport.SetContent(strings.Join(wrappedLines, "\n"))
+	// Only auto-scroll if user hasn't scrolled up manually
+	if m.logAutoScroll {
+		m.viewport.GotoBottom()
+	}
 }
 
 // View implements tea.Model
@@ -592,24 +727,27 @@ func (m DashboardModel) renderCurrentOperation(width int) string {
 }
 
 func (m DashboardModel) renderLogPanel(width int) string {
-	// Get recent log lines
-	logCount := DashboardLogBuffer
-	startIdx := 0
-	if len(m.logLines) > logCount {
-		startIdx = len(m.logLines) - logCount
-	}
-	recentLogs := m.logLines[startIdx:]
-
-	content := strings.Join(recentLogs, "\n")
-	if content == "" {
+	// Use viewport for scrollable log view
+	content := m.viewport.View()
+	if len(m.logLines) == 0 {
 		content = StyleMuted.Render("No log output yet...")
 	}
 
 	// Render box with consistent width
 	box := StyleDashboardLogBox.Width(width - 2).Render(content)
 
+	// Build title with scroll indicator
+	title := "Logs"
+	if len(m.logLines) > 0 && !m.viewport.AtBottom() {
+		// Show indicator that there are more logs below
+		title = fmt.Sprintf("Logs [%d/%d]", m.viewport.YOffset+DashboardLogBuffer, len(m.logLines))
+	} else if !m.viewport.AtTop() && len(m.logLines) > DashboardLogBuffer {
+		// Show total count when at bottom but there's history above
+		title = fmt.Sprintf("Logs [%d lines]", len(m.logLines))
+	}
+
 	// Add title to border
-	box = insertBorderTitle(box, "Logs", StyleMuted)
+	box = insertBorderTitle(box, title, StyleMuted)
 
 	return box
 }
@@ -737,21 +875,9 @@ func (m DashboardModel) renderFooter(width int) string {
 	elapsed := time.Since(m.startTime).Round(time.Second)
 	elapsedStr := StyleDashboardLabel.Render("Total: ") + StyleDashboardValue.Render(elapsed.String())
 
-	// Hotkeys
-	verboseKey := "[v] verbose"
-	if m.verbose {
-		verboseKey = "[v] compact"
-	}
-	podsKey := "[p] pods"
-	if m.showPods {
-		podsKey = "[p] hide pods"
-	}
-	hotkeys := fmt.Sprintf(
-		"%s  %s  %s",
-		StyleDashboardHotkey.Render(verboseKey),
-		StyleDashboardHotkey.Render(podsKey),
-		StyleDashboardHotkey.Render("[q] quit"),
-	)
+	// Use help component for hotkeys
+	m.help.Width = width - lipgloss.Width(elapsedStr) - 6
+	hotkeys := m.help.ShortHelpView(m.keyMap.ShortHelp())
 
 	// Build footer line
 	padding := width - lipgloss.Width(elapsedStr) - lipgloss.Width(hotkeys) - 4
