@@ -91,7 +91,10 @@ jobs:
           if [ "$GOOS" = "windows" ]; then
             EXT=".exe"
           fi
-          go build -ldflags="-s -w -X github.com/kanzi/kindplane/internal/cmd.version=dev -X github.com/kanzi/kindplane/internal/cmd.commit=${{ github.sha }} -X github.com/kanzi/kindplane/internal/cmd.buildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o kindplane-${GOOS}-${GOARCH}${EXT} ./cmd/kindplane
+          VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+          COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "none")
+          BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          go build -ldflags="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT} -X main.BuildTime=${BUILD_TIME}" -o kindplane-${GOOS}-${GOARCH}${EXT} ./cmd/kindplane
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

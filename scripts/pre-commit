@@ -1,0 +1,3 @@
+#!/bin/sh
+# Run project checks before commit. Install with: task hooks:install
+exec task check
