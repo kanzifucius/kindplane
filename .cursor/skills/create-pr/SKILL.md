@@ -47,6 +47,11 @@ Analyse the current branch, check for uncommitted changes, commit if needed usin
    - If the branch is not pushed, push it with `git push -u origin <branch-name>`
    - If the branch is already pushed, proceed to step 5
 
+4a. **Check if PR already exists**:
+   - Run `gh pr list --head <branch-name>` to check if a PR already exists for this branch
+   - If a PR exists, inform the user and provide the PR URL instead of creating a new one
+   - If no PR exists, proceed to step 5
+
 5. **Analyse commits for PR content**:
    - Review all commits on the branch that are not on the default branch
    - Read the commit messages to understand the changes
@@ -92,25 +97,41 @@ Analyse the current branch, check for uncommitted changes, commit if needed usin
    - [ ] No breaking changes (or breaking changes documented)
 
 8. **Create the Pull Request**:
-   - First, try to use the GitHub MCP tools to create the PR:
+   - **Get repository information**:
+     - Run `git remote get-url origin` to get the repository URL
+     - Extract owner and repo name (e.g., `kanzifucius/kindplane` from `git@github.com:kanzifucius/kindplane.git`)
+   
+   - **First, try to use the GitHub MCP tools** to create the PR:
+     - Use the repository owner and name from above
      - Set the title from step 6
      - Set the description from step 7
      - Set the base branch to `main` (or `master` if main doesn't exist)
      - Set the head branch to the current branch
      - If there are related issues, include them in the description
-   - **If MCP tools are not available**, use the GitHub CLI (`gh`) as a fallback:
-     - Save the PR description to a temporary file (e.g., `/tmp/pr-description.md`)
-     - Run `gh pr create --title "<title from step 6>" --body-file /tmp/pr-description.md --base <default-branch> --head <current-branch>`
-     - If there are related issues, add `--body` parameter with the description including issue references, or use `--body-file` and include issues in the file
-     - Clean up the temporary file after creating the PR
-   - Verify that `gh` CLI is installed and authenticated if using the fallback method
+   
+   - **If MCP tools are not available or fail**, use the GitHub CLI (`gh`) as a fallback:
+     - **Verify gh CLI is authenticated**: Run `gh auth status` to confirm authentication
+     - **Create temporary file**: Write the PR description to `/tmp/pr-body.md` (or `/tmp/pr-description.md`) using the write tool
+     - **Create PR**: Run `gh pr create --title "<title from step 6>" --body-file /tmp/pr-body.md --base <default-branch> --head <current-branch>`
+     - **Handle errors**: 
+       - If TLS/certificate errors occur, try running with `required_permissions: ['all']` to bypass sandbox restrictions
+       - If authentication fails, inform the user they need to run `gh auth login`
+       - If the command fails, check error message and retry or inform user
+     - **Clean up**: Always delete the temporary file after creating the PR (success or failure)
+   
+   - **Verify PR was created**:
+     - The command should output a PR URL (e.g., `https://github.com/owner/repo/pull/15`)
+     - If no URL is returned, check for errors and inform the user
 
 9. **Report**:
    - Summarise what was done:
-     - Whether any commits were created
-     - The commit message(s) used
-     - The PR title and description
-     - The PR URL (if available)
+     - Whether any commits were created (if step 2 was executed)
+     - The commit message(s) used (if any)
+     - Current branch name
+     - Number of commits included in the PR
+     - The PR title and brief description summary
+     - **The PR URL** (always include if PR was created successfully)
+     - Any issues encountered or warnings
 
 ## Notes
 
@@ -120,5 +141,10 @@ Analyse the current branch, check for uncommitted changes, commit if needed usin
 - The PR description should be comprehensive but concise
 - If multiple commits exist, the PR should reflect the overall change, not just the latest commit
 - Check for any linting or test failures before creating the PR
-- If GitHub MCP tools are not available, fall back to using the GitHub CLI (`gh pr create`)
-- Ensure the GitHub CLI is installed and authenticated if using the fallback method
+- Always check if a PR already exists for the branch before creating a new one
+- When using `gh` CLI, create the body file explicitly using the write tool before running the command
+- Handle TLS/certificate errors by using `required_permissions: ['all']` if needed
+- Always clean up temporary files after PR creation (success or failure)
+- Verify `gh auth status` before attempting to create PR with gh CLI
+- Extract repository owner/name from git remote URL for use with MCP tools
+- Always include the PR URL in the final report
