@@ -1,543 +1,506 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/kanzifucius/kindplane/main/kindplane.schema.json",
-  "title": "Kindplane Configuration",
-  "description": "Configuration schema for kindplane.yaml - a tool for bootstrapping Kind clusters with Crossplane",
-  "type": "object",
-  "properties": {
-    "cluster": {
-      "$ref": "#/definitions/ClusterConfig"
-    },
-    "crossplane": {
-      "$ref": "#/definitions/CrossplaneConfig"
-    },
-    "credentials": {
-      "$ref": "#/definitions/CredentialsConfig"
-    },
-    "charts": {
-      "type": "array",
-      "description": "Additional Helm charts to install during cluster setup",
-      "items": {
-        "$ref": "#/definitions/ChartConfig"
-      },
-      "default": []
-    },
-    "compositions": {
-      "$ref": "#/definitions/CompositionsConfig"
-    }
-  },
-  "required": ["cluster", "crossplane"],
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
   "definitions": {
-    "ClusterConfig": {
-      "type": "object",
-      "description": "Kind cluster configuration",
+    "AWSCredentials": {
+      "additionalProperties": false,
       "properties": {
+        "profile": {
+          "type": "string"
+        },
+        "source": {
+          "description": "Source: env (environment variables), file (credentials file), profile (AWS CLI profile)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "type": "object"
+    },
+    "AzureCredentials": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "description": "Source: env (environment variables), file (credentials file)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "type": "object"
+    },
+    "ChartConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "chart": {
+          "description": "Chart name in the repository",
+          "type": "string"
+        },
+        "createNamespace": {
+          "description": "Create namespace if not exists (default: true)",
+          "type": "boolean"
+        },
         "name": {
-          "type": "string",
-          "description": "Name of the Kind cluster",
-          "minLength": 1,
-          "default": "kindplane-dev"
+          "description": "Helm release name",
+          "type": "string"
         },
-        "kubernetesVersion": {
-          "type": "string",
-          "description": "Kubernetes version to use (optional, uses Kind default if not specified)",
-          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
-          "examples": ["1.29.0", "1.28.0", "1.27.0"]
+        "namespace": {
+          "description": "Target namespace",
+          "type": "string"
         },
-        "nodes": {
-          "$ref": "#/definitions/NodesConfig"
+        "phase": {
+          "description": "Installation phase: pre-crossplane, post-crossplane, post-providers, post-eso (default)",
+          "type": "string"
         },
-        "portMappings": {
-          "type": "array",
-          "description": "Port mappings from container to host",
+        "repo": {
+          "description": "Helm repository URL",
+          "type": "string"
+        },
+        "timeout": {
+          "description": "Installation timeout (default: 5m)",
+          "type": "string"
+        },
+        "values": {
+          "description": "Inline values",
+          "type": "object"
+        },
+        "valuesFiles": {
+          "description": "Paths to values files",
           "items": {
-            "$ref": "#/definitions/PortMapping"
-          }
+            "type": "string"
+          },
+          "type": "array"
         },
+        "version": {
+          "description": "Chart version (optional, latest if omitted)",
+          "type": "string"
+        },
+        "wait": {
+          "description": "Wait for resources to be ready (default: true)",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "repo",
+        "chart",
+        "namespace"
+      ],
+      "type": "object"
+    },
+    "ClusterConfig": {
+      "additionalProperties": false,
+      "properties": {
         "extraMounts": {
-          "type": "array",
           "description": "Mount host paths into Kind nodes",
           "items": {
             "$ref": "#/definitions/ExtraMount"
-          }
+          },
+          "type": "array"
         },
         "ingress": {
-          "$ref": "#/definitions/IngressConfig"
+          "$ref": "#/definitions/IngressConfig",
+          "description": "Ingress controller readiness configuration\nWhen enabled, adds required labels and port mappings for ingress controllers"
+        },
+        "kubernetesVersion": {
+          "description": "Kubernetes version to use (optional, uses Kind default if not specified)",
+          "type": "string"
+        },
+        "name": {
+          "description": "Name of the Kind cluster",
+          "type": "string"
+        },
+        "nodeImage": {
+          "description": "Full Kind node image path (optional)\nUse when pulling images through a proxy registry like Artifactory\nIf not specified, defaults to \"kindest/node:v\u003ckubernetesVersion\u003e\"\nExamples:\n  - \"artifactory.example.com/kindest/node:v1.29.0\"\n  - \"artifactory.example.com/docker.io/kindest/node:v1.29.0\"\nNote: Ensure the proxy registry is configured in trustedCAs if using custom certificates",
+          "type": "string"
+        },
+        "nodes": {
+          "$ref": "#/definitions/NodesConfig",
+          "description": "Node configuration"
+        },
+        "portMappings": {
+          "description": "Port mappings from container to host\nFormat: containerPort:hostPort/protocol",
+          "items": {
+            "$ref": "#/definitions/PortMapping"
+          },
+          "type": "array"
+        },
+        "rawConfigPath": {
+          "description": "Optional: path to a raw Kind config file\nSettings from kindplane.yaml will be merged on top (kindplane wins)",
+          "type": "string"
         },
         "registry": {
           "$ref": "#/definitions/RegistryConfig"
         },
         "trustedCAs": {
-          "$ref": "#/definitions/TrustedCAsConfig"
-        },
-        "nodeImage": {
-          "type": "string",
-          "description": "Full Kind node image path. Use when your environment requires pulling images through a proxy registry like Artifactory. If not specified, defaults to 'kindest/node:v<kubernetesVersion>'. Examples: 'artifactory.example.com/kindest/node:v1.29.0' or 'artifactory.example.com/docker.io/kindest/node:v1.29.0'. Ensure the proxy registry is configured in trustedCAs if it uses custom certificates."
-        },
-        "rawConfigPath": {
-          "type": "string",
-          "description": "Optional path to a raw Kind config file. Settings from kindplane.yaml will be merged on top (kindplane wins)"
+          "$ref": "#/definitions/TrustedCAsConfig",
+          "description": "Trusted CA certificates for private registries and workloads"
         }
       },
-      "required": ["name", "nodes"],
-      "additionalProperties": false
-    },
-    "TrustedCAsConfig": {
-      "type": "object",
-      "description": "Trusted CA certificate configuration for private registries and workloads",
-      "properties": {
-        "registries": {
-          "type": "array",
-          "description": "CA certificates for private container registries (trusted by containerd)",
-          "items": {
-            "$ref": "#/definitions/RegistryCA"
-          }
-        },
-        "workloads": {
-          "type": "array",
-          "description": "CA certificates mounted for workloads to trust",
-          "items": {
-            "$ref": "#/definitions/WorkloadCA"
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    "RegistryCA": {
-      "type": "object",
-      "description": "CA certificate for a private container registry",
-      "properties": {
-        "host": {
-          "type": "string",
-          "description": "Registry host (e.g., 'registry.example.com:5000' or '*.internal.company.com')",
-          "minLength": 1,
-          "examples": ["registry.example.com:5000", "harbor.internal.com", "*.mycompany.com"]
-        },
-        "caFile": {
-          "type": "string",
-          "description": "Path to CA certificate file on the host",
-          "minLength": 1,
-          "examples": ["./certs/registry-ca.crt", "/path/to/ca.crt"]
-        }
-      },
-      "required": ["host", "caFile"],
-      "additionalProperties": false
-    },
-    "WorkloadCA": {
-      "type": "object",
-      "description": "CA certificate to mount for workloads",
-      "properties": {
-        "name": {
-          "type": "string",
-          "description": "Identifier for the CA (used in the mount path)",
-          "minLength": 1,
-          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$",
-          "examples": ["corporate-ca", "internal-root-ca"]
-        },
-        "caFile": {
-          "type": "string",
-          "description": "Path to CA certificate file on the host",
-          "minLength": 1,
-          "examples": ["./certs/corporate-ca.crt", "/path/to/ca.crt"]
-        }
-      },
-      "required": ["name", "caFile"],
-      "additionalProperties": false
-    },
-    "NodesConfig": {
-      "type": "object",
-      "description": "Node configuration for the Kind cluster",
-      "properties": {
-        "controlPlane": {
-          "type": "integer",
-          "description": "Number of control plane nodes",
-          "minimum": 1,
-          "default": 1
-        },
-        "workers": {
-          "type": "integer",
-          "description": "Number of worker nodes",
-          "minimum": 0,
-          "default": 1
-        }
-      },
-      "required": ["controlPlane"],
-      "additionalProperties": false
-    },
-    "PortMapping": {
-      "type": "object",
-      "description": "Port mapping from container to host",
-      "properties": {
-        "containerPort": {
-          "type": "integer",
-          "description": "Port inside the container",
-          "minimum": 1,
-          "maximum": 65535
-        },
-        "hostPort": {
-          "type": "integer",
-          "description": "Port on the host machine",
-          "minimum": 1,
-          "maximum": 65535
-        },
-        "protocol": {
-          "type": "string",
-          "description": "Protocol for the port mapping",
-          "enum": ["TCP", "UDP", "SCTP"],
-          "default": "TCP"
-        }
-      },
-      "required": ["containerPort", "hostPort"],
-      "additionalProperties": false
-    },
-    "ExtraMount": {
-      "type": "object",
-      "description": "Volume mount from host to container",
-      "properties": {
-        "hostPath": {
-          "type": "string",
-          "description": "Path on the host machine",
-          "minLength": 1
-        },
-        "containerPath": {
-          "type": "string",
-          "description": "Path inside the container",
-          "minLength": 1
-        },
-        "readOnly": {
-          "type": "boolean",
-          "description": "Whether the mount should be read-only",
-          "default": false
-        }
-      },
-      "required": ["hostPath", "containerPath"],
-      "additionalProperties": false
-    },
-    "IngressConfig": {
-      "type": "object",
-      "description": "Ingress controller readiness configuration. When enabled, adds required labels and port mappings for ingress controllers",
-      "properties": {
-        "enabled": {
-          "type": "boolean",
-          "description": "Enable ingress controller support",
-          "default": true
-        }
-      },
-      "additionalProperties": false
-    },
-    "RegistryConfig": {
-      "type": "object",
-      "description": "Local container registry configuration. When enabled, creates a local Docker registry that Kind nodes can pull images from",
-      "properties": {
-        "enabled": {
-          "type": "boolean",
-          "description": "Enable local container registry",
-          "default": false
-        },
-        "port": {
-          "type": "integer",
-          "description": "Host port for the registry",
-          "minimum": 1,
-          "maximum": 65535,
-          "default": 5001
-        },
-        "persistent": {
-          "type": "boolean",
-          "description": "Keep registry container after kindplane down. When false, the registry is removed with the cluster",
-          "default": false
-        },
-        "name": {
-          "type": "string",
-          "description": "Registry container name",
-          "default": "kind-registry",
-          "minLength": 1
-        }
-      },
-      "additionalProperties": false
-    },
-    "CrossplaneConfig": {
-      "type": "object",
-      "description": "Crossplane installation settings",
-      "properties": {
-        "version": {
-          "type": "string",
-          "description": "Crossplane version to install",
-          "minLength": 1,
-          "examples": ["1.15.0", "1.14.0"]
-        },
-        "repo": {
-          "type": "string",
-          "description": "Custom Helm repository URL (defaults to https://charts.crossplane.io/stable)",
-          "format": "uri"
-        },
-        "values": {
-          "type": "object",
-          "description": "Inline Helm values for Crossplane installation",
-          "additionalProperties": true
-        },
-        "valuesFiles": {
-          "type": "array",
-          "description": "Paths to external values files",
-          "items": {
-            "type": "string"
-          }
-        },
-        "providers": {
-          "type": "array",
-          "description": "Crossplane providers to install",
-          "items": {
-            "$ref": "#/definitions/ProviderConfig"
-          }
-        },
-        "registryCaBundle": {
-          "$ref": "#/definitions/RegistryCaBundleConfig"
-        }
-      },
-      "required": ["version"],
-      "additionalProperties": false
-    },
-    "RegistryCaBundleConfig": {
-      "type": "object",
-      "description": "CA bundle configuration for Crossplane registry access. Required when pulling Configuration and Provider packages from private registries with custom certificates. Multiple certificates can be specified and will be bundled together.",
-      "properties": {
-        "caFiles": {
-          "type": "array",
-          "description": "Direct paths to CA certificate files on the host. Multiple certificates will be bundled together.",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          },
-          "examples": [["./certs/corporate-root-ca.crt", "./certs/proxy-ca.crt"]]
-        },
-        "workloadCARefs": {
-          "type": "array",
-          "description": "References to existing workload CAs by name (must be defined in cluster.trustedCAs.workloads). Multiple references allowed.",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          },
-          "examples": [["corporate-root-ca", "internal-services-ca"]]
-        }
-      },
-      "anyOf": [
-        {
-          "required": ["caFiles"]
-        },
-        {
-          "required": ["workloadCARefs"]
-        }
+      "required": [
+        "name",
+        "kubernetesVersion",
+        "nodes",
+        "ingress"
       ],
-      "additionalProperties": false
+      "type": "object"
     },
-    "ProviderConfig": {
-      "type": "object",
-      "description": "Crossplane provider configuration",
+    "CompositionSource": {
+      "additionalProperties": false,
       "properties": {
-        "name": {
-          "type": "string",
-          "description": "Name of the provider (used for identification)",
-          "minLength": 1,
-          "examples": ["provider-aws", "provider-azure", "provider-kubernetes"]
+        "branch": {
+          "description": "git branch",
+          "type": "string"
         },
-        "package": {
-          "type": "string",
-          "description": "Full OCI package path with version tag",
-          "minLength": 1,
-          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._/-]*:[a-zA-Z0-9][a-zA-Z0-9._-]*$",
-          "examples": [
-            "xpkg.upbound.io/upbound/provider-aws:v1.1.0",
-            "xpkg.upbound.io/upbound/provider-azure:v1.0.0",
-            "xpkg.upbound.io/crossplane-contrib/provider-kubernetes:v0.12.0"
-          ]
-        }
-      },
-      "required": ["name", "package"],
-      "additionalProperties": false
-    },
-    "CredentialsConfig": {
-      "type": "object",
-      "description": "Cloud provider credentials configuration",
-      "properties": {
-        "aws": {
-          "$ref": "#/definitions/AWSCredentials"
-        },
-        "azure": {
-          "$ref": "#/definitions/AzureCredentials"
-        },
-        "kubernetes": {
-          "$ref": "#/definitions/KubernetesCredentials"
-        }
-      },
-      "additionalProperties": false
-    },
-    "AWSCredentials": {
-      "type": "object",
-      "description": "AWS credential source configuration",
-      "properties": {
-        "source": {
-          "type": "string",
-          "description": "Source of AWS credentials: env (environment variables), file (credentials file), profile (AWS CLI profile)",
-          "enum": ["env", "file", "profile"],
-          "default": "env"
-        },
-        "profile": {
-          "type": "string",
-          "description": "AWS CLI profile name (used when source is 'profile')",
-          "default": "default"
-        }
-      },
-      "additionalProperties": false
-    },
-    "AzureCredentials": {
-      "type": "object",
-      "description": "Azure credential source configuration",
-      "properties": {
-        "source": {
-          "type": "string",
-          "description": "Source of Azure credentials: env (environment variables), file (credentials file)",
-          "enum": ["env", "file"],
-          "default": "env"
-        }
-      },
-      "additionalProperties": false
-    },
-    "KubernetesCredentials": {
-      "type": "object",
-      "description": "Kubernetes provider credential source configuration",
-      "properties": {
-        "source": {
-          "type": "string",
-          "description": "Source of Kubernetes credentials: incluster (use service account), kubeconfig (use kubeconfig file)",
-          "enum": ["incluster", "kubeconfig"],
-          "default": "incluster"
-        }
-      },
-      "additionalProperties": false
-    },
-    "ChartConfig": {
-      "type": "object",
-      "description": "Helm chart installation configuration",
-      "properties": {
-        "name": {
-          "type": "string",
-          "description": "Helm release name",
-          "minLength": 1
+        "path": {
+          "description": "local path or path within git repo",
+          "type": "string"
         },
         "repo": {
-          "type": "string",
-          "description": "Helm repository URL",
-          "format": "uri",
-          "minLength": 1
+          "description": "git repository URL",
+          "type": "string"
         },
-        "chart": {
-          "type": "string",
-          "description": "Chart name in the repository",
-          "minLength": 1
-        },
-        "version": {
-          "type": "string",
-          "description": "Chart version (optional, uses latest if omitted)"
-        },
-        "namespace": {
-          "type": "string",
-          "description": "Target namespace for the chart",
-          "minLength": 1
-        },
-        "createNamespace": {
-          "type": "boolean",
-          "description": "Create namespace if it does not exist",
-          "default": true
-        },
-        "phase": {
-          "type": "string",
-          "description": "Installation phase determining when the chart is installed",
-          "enum": ["pre-crossplane", "post-crossplane", "post-providers", "final", "post-eso"],
-          "default": "final"
-        },
-        "wait": {
-          "type": "boolean",
-          "description": "Wait for resources to be ready before continuing",
-          "default": true
-        },
-        "timeout": {
-          "type": "string",
-          "description": "Installation timeout (Go duration format)",
-          "pattern": "^[0-9]+(s|m|h)$",
-          "default": "5m",
-          "examples": ["5m", "10m", "300s"]
-        },
-        "values": {
-          "type": "object",
-          "description": "Inline Helm values",
-          "additionalProperties": true
-        },
-        "valuesFiles": {
-          "type": "array",
-          "description": "Paths to external values files",
-          "items": {
-            "type": "string"
-          }
+        "type": {
+          "description": "local, git",
+          "type": "string"
         }
       },
-      "required": ["name", "repo", "chart", "namespace"],
-      "additionalProperties": false
+      "required": [
+        "type",
+        "path"
+      ],
+      "type": "object"
     },
     "CompositionsConfig": {
-      "type": "object",
-      "description": "Crossplane compositions and XRDs configuration",
+      "additionalProperties": false,
       "properties": {
         "sources": {
-          "type": "array",
           "description": "Sources to load compositions from",
           "items": {
             "$ref": "#/definitions/CompositionSource"
           },
-          "default": []
+          "type": "array"
         }
       },
-      "additionalProperties": false
+      "type": "object"
     },
-    "CompositionSource": {
-      "type": "object",
-      "description": "Source for loading Crossplane compositions",
+    "CredentialsConfig": {
+      "additionalProperties": false,
       "properties": {
-        "type": {
-          "type": "string",
-          "description": "Source type: local (filesystem path) or git (git repository)",
-          "enum": ["local", "git"]
+        "aws": {
+          "$ref": "#/definitions/AWSCredentials",
+          "description": "AWS credentials configuration (uncomment if using provider-aws)"
         },
-        "path": {
-          "type": "string",
-          "description": "Local path or path within git repo to compositions"
+        "azure": {
+          "$ref": "#/definitions/AzureCredentials",
+          "description": "Azure credentials configuration (uncomment if using provider-azure)"
+        },
+        "kubernetes": {
+          "$ref": "#/definitions/KubernetesCredentials",
+          "description": "Kubernetes provider credentials"
+        }
+      },
+      "type": "object"
+    },
+    "CrossplaneConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "imageCache": {
+          "$ref": "#/definitions/ImageCacheConfig",
+          "description": "Image caching configuration"
+        },
+        "providers": {
+          "description": "Crossplane providers to install\nUse full OCI package path with version tag",
+          "items": {
+            "$ref": "#/definitions/ProviderConfig"
+          },
+          "type": "array"
+        },
+        "registryCaBundle": {
+          "$ref": "#/definitions/RegistryCaBundleConfig",
+          "description": "Registry CA bundle for Crossplane (optional)\nRequired when pulling Configuration and Provider packages from private registries with custom certificates\nMultiple certificates can be specified and will be bundled together into one ConfigMap"
         },
         "repo": {
-          "type": "string",
-          "description": "Git repository URL (required for git type)",
-          "format": "uri"
+          "description": "Custom Helm repository URL (optional)\nUse when pulling charts from a private registry or air-gapped environment\nIf not specified, defaults to https://charts.crossplane.io/stable",
+          "type": "string"
         },
-        "branch": {
-          "type": "string",
-          "description": "Git branch to clone (required for git type)",
-          "default": "main"
+        "values": {
+          "description": "Inline Helm values for Crossplane installation (optional)\nThese values will be merged with any values files specified below",
+          "type": "object"
+        },
+        "valuesFiles": {
+          "description": "External values files (optional)\nValues from files are loaded first, then inline values override them",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "version": {
+          "description": "Crossplane version to install",
+          "type": "string"
         }
       },
-      "required": ["type", "path"],
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "git"
-              }
-            }
-          },
-          "then": {
-            "required": ["type", "path", "repo", "branch"]
-          }
-        }
+      "required": [
+        "version"
       ],
-      "additionalProperties": false
+      "type": "object"
+    },
+    "ExtraMount": {
+      "additionalProperties": false,
+      "properties": {
+        "containerPath": {
+          "type": "string"
+        },
+        "hostPath": {
+          "type": "string"
+        },
+        "readOnly": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "hostPath",
+        "containerPath"
+      ],
+      "type": "object"
+    },
+    "ImageCacheConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "additionalImages": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "imageOverrides": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": "object"
+        },
+        "preloadCrossplane": {
+          "type": "boolean"
+        },
+        "preloadProviders": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "IngressConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "type": "object"
+    },
+    "KubernetesCredentials": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "description": "Source: incluster (use service account), kubeconfig (use kubeconfig file)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "type": "object"
+    },
+    "NodesConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "controlPlane": {
+          "type": "integer"
+        },
+        "workers": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "controlPlane",
+        "workers"
+      ],
+      "type": "object"
+    },
+    "PortMapping": {
+      "additionalProperties": false,
+      "properties": {
+        "containerPort": {
+          "type": "integer"
+        },
+        "hostPort": {
+          "type": "integer"
+        },
+        "protocol": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "containerPort",
+        "hostPort"
+      ],
+      "type": "object"
+    },
+    "ProviderConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "package": {
+          "description": "Full OCI package path with version tag (e.g., xpkg.upbound.io/upbound/provider-aws:v1.1.0)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "package"
+      ],
+      "type": "object"
+    },
+    "RegistryCA": {
+      "additionalProperties": false,
+      "properties": {
+        "caFile": {
+          "description": "Path to CA certificate file on the host",
+          "type": "string"
+        },
+        "host": {
+          "description": "Registry host (e.g., \"registry.example.com:5000\" or \"*.internal.company.com\")",
+          "type": "string"
+        }
+      },
+      "required": [
+        "host",
+        "caFile"
+      ],
+      "type": "object"
+    },
+    "RegistryCaBundleConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "caFiles": {
+          "description": "Direct paths to CA files (multiple allowed)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "workloadCARefs": {
+          "description": "Reference existing workload CAs by name (must be defined in cluster.trustedCAs.workloads)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "RegistryConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "persistent": {
+          "type": "boolean"
+        },
+        "port": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "type": "object"
+    },
+    "TrustedCAsConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "registries": {
+          "description": "CA certificates for private container registries (trusted by containerd)",
+          "items": {
+            "$ref": "#/definitions/RegistryCA"
+          },
+          "type": "array"
+        },
+        "workloads": {
+          "description": "CA certificates mounted for workloads to trust",
+          "items": {
+            "$ref": "#/definitions/WorkloadCA"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "WorkloadCA": {
+      "additionalProperties": false,
+      "properties": {
+        "caFile": {
+          "description": "Path to CA certificate file on the host",
+          "type": "string"
+        },
+        "name": {
+          "description": "Identifier for the CA (used in the mount path)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "caFile"
+      ],
+      "type": "object"
     }
-  }
+  },
+  "description": "Configuration schema for kindplane.yaml - a tool for bootstrapping Kind clusters with Crossplane",
+  "properties": {
+    "charts": {
+      "description": "Additional Helm charts to install\nPhases: pre-crossplane, post-crossplane, post-providers, final (default), post-eso (deprecated)",
+      "items": {
+        "$ref": "#/definitions/ChartConfig"
+      },
+      "type": "array"
+    },
+    "cluster": {
+      "$ref": "#/definitions/ClusterConfig"
+    },
+    "compositions": {
+      "$ref": "#/definitions/CompositionsConfig",
+      "description": "Crossplane compositions and XRDs"
+    },
+    "credentials": {
+      "$ref": "#/definitions/CredentialsConfig"
+    },
+    "crossplane": {
+      "$ref": "#/definitions/CrossplaneConfig"
+    }
+  },
+  "required": [
+    "cluster",
+    "crossplane",
+    "credentials",
+    "compositions"
+  ],
+  "title": "Kindplane Configuration",
+  "type": "object"
 }
