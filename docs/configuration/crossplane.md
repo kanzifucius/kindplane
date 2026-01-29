@@ -172,6 +172,93 @@ This enables Crossplane to trust custom CA certificates when pulling packages fr
     
     The CA bundle is automatically injected into Crossplane's configuration, allowing it to authenticate with registries through corporate proxies.
 
+### imageCache
+
+Configure image caching behavior to speed up cluster bootstrapping by pre-loading images from your local Docker daemon.
+
+**Enabled by default** - kindplane automatically pre-loads images if they exist locally.
+
+```yaml
+crossplane:
+  version: "1.15.0"
+  imageCache:
+    # Disable image caching
+    enabled: false
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | bool | true | Enable/disable image pre-loading |
+| `preloadProviders` | bool | true | Pre-load provider images |
+| `preloadCrossplane` | bool | true | Pre-load Crossplane core images |
+| `additionalImages` | array | [] | Extra images to pre-load |
+| `imageOverrides` | object | {} | Map packages to actual images |
+
+#### How It Works
+
+kindplane automatically derives controller image names from provider packages and checks if they exist in your local Docker daemon:
+
+```
+Provider Package:
+  xpkg.upbound.io/upbound/provider-aws:v1.1.0
+
+Derived Images:
+  xpkg.upbound.io/upbound/provider-aws:v1.1.0 (package)
+  xpkg.upbound.io/upbound/provider-aws-controller:v1.1.0 (controller)
+```
+
+If found locally, images are:
+- **Pushed to local registry** (if `cluster.registry.enabled: true`)
+- **Loaded directly into Kind nodes** (if registry disabled)
+
+#### Basic Example
+
+```yaml
+crossplane:
+  version: "1.15.0"
+  providers:
+    - name: provider-kubernetes
+      package: xpkg.upbound.io/crossplane-contrib/provider-kubernetes:v0.12.0
+```
+
+Before running `kindplane up`, pre-pull images:
+
+```bash
+docker pull crossplane/crossplane:v1.15.0
+docker pull xpkg.upbound.io/crossplane-contrib/provider-kubernetes-controller:v0.12.0
+kindplane up  # Fast! Uses cached images
+```
+
+#### Advanced Configuration
+
+```yaml
+crossplane:
+  version: "1.15.0"
+  imageCache:
+    enabled: true
+    preloadProviders: true
+    preloadCrossplane: true
+    
+    # Pre-load Crossplane functions
+    additionalImages:
+      - "xpkg.upbound.io/crossplane-contrib/function-patch-and-transform:v0.2.0"
+      - "xpkg.upbound.io/crossplane-contrib/function-go-templating:v0.3.0"
+    
+    # Handle non-standard provider images
+    imageOverrides:
+      "my-registry.io/custom/provider:v1.0.0":
+        - "my-registry.io/custom/provider-controller:v1.0.0"
+        - "my-registry.io/custom/provider-webhook:v1.0.0"
+```
+
+!!! tip "Benefits"
+    - **Faster bootstrap** - No network pulls for cached images (saves 30-120s)
+    - **Offline support** - Works without internet after images are cached
+    - **Reduced registry load** - Useful in CI/CD environments
+
+!!! info "See Also"
+    See [Image Cache Configuration](./image-cache.md) for complete documentation.
+
 ### providers
 
 List of Crossplane providers to install.

@@ -28,6 +28,22 @@ charts:       # Helm charts to install
 compositions: # Crossplane compositions to apply
 ```
 
+## Schema Generation
+
+The JSON Schema (`kindplane.schema.json`) is generated from the config package types so it stays in sync with the code. Regenerate it after changing `internal/config/config.go`:
+
+```bash
+task schema:generate
+```
+
+Or run the generator directly:
+
+```bash
+go run ./cmd/genschema
+```
+
+Descriptions in the schema come from the `comment` and `doc` struct tags on config fields. You can add `default`, `example`, `enum`, or `pattern` via the `jsonschema` struct tag (see [invopop/jsonschema](https://github.com/invopop/jsonschema)) if you want richer validation.
+
 ## IDE Support
 
 kindplane provides a JSON Schema for configuration validation and IDE autocomplete.
