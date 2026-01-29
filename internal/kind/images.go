@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 
 	"sigs.k8s.io/kind/pkg/cluster"
 	"sigs.k8s.io/kind/pkg/cluster/nodeutils"
@@ -457,34 +459,124 @@ func loadImagesIntoNodes(ctx context.Context, clusterName string, images []strin
 		// For macOS with Docker Desktop, we need to handle each node separately
 		// and create a fresh stream for each node
 		allNodesSuccess := true
-		for nodeIdx, node := range nodes {
-			if len(nodes) > 1 {
-				logFn(fmt.Sprintf("  Loading into node %d/%d...", nodeIdx+1, len(nodes)))
+
+		// Use a temporary file to transfer the image to avoid pipe issues
+		// This is a workaround for some environments where piping directly to ctr fails
+
+		// 1. Create a temporary file
+		tmpFile, err := os.CreateTemp("", "kind-image-*.tar")
+		if err != nil {
+			logFn(fmt.Sprintf("  ✗ Failed to create temp file: %v", err))
+			continue
+		}
+		defer os.Remove(tmpFile.Name()) // Clean up
+
+		// 2. Save image to the temporary file
+		logFn(fmt.Sprintf("  Exporting image to temp file..."))
+		saveCmd := exec.CommandContext(ctx, "docker", "save", "-o", tmpFile.Name(), img)
+		if out, err := saveCmd.CombinedOutput(); err != nil {
+			logFn(fmt.Sprintf("  ✗ Failed to save image: %v (%s)", err, strings.TrimSpace(string(out))))
+			tmpFile.Close()
+			continue
+		}
+		tmpFile.Close() // Close so we can read it again
+
+		// WORKAROUND: Remove OCI index files from the tarball if present.
+		// Docker on macOS (ARM64) sometimes exports a tarball containing both OCI layout/index.json AND
+		// a Docker v2 manifest.json. However, the 'index.json' often references a multi-arch manifest
+		// digest (e.g., from the remote registry) that does not exist in the local blob store because
+		// we only pulled the single architecture.
+		//
+		// When 'ctr' sees 'index.json', it tries to validate the entire index (all architectures),
+		// fails to find the other architecture blobs, and errors with "content digest ... not found".
+		//
+		// By removing 'index.json' and 'oci-layout', we force 'ctr' (and 'kind load') to fall back
+		// to using 'manifest.json' (Docker V2 format), which correctly points to the single-arch
+		// blobs that are actually present in the tarball.
+		if runtime.GOARCH == "arm64" {
+			// Create a temporary directory for repackaging
+			repackDir, err := os.MkdirTemp("", "kind-repack-*")
+			if err == nil {
+				defer os.RemoveAll(repackDir)
+
+				// Unpack tarball
+				unpackCmd := exec.CommandContext(ctx, "tar", "-xf", tmpFile.Name(), "-C", repackDir)
+				if err := unpackCmd.Run(); err == nil {
+					// Check if index.json exists
+					if _, err := os.Stat(fmt.Sprintf("%s/index.json", repackDir)); err == nil {
+						// Remove OCI files
+						os.Remove(fmt.Sprintf("%s/index.json", repackDir))
+						os.Remove(fmt.Sprintf("%s/oci-layout", repackDir))
+
+						// Repack into the temp file (overwriting it)
+						// Note: We need to recreate the file
+						tmpFileForRepack, err := os.Create(tmpFile.Name())
+						if err == nil {
+							// Tar command to repack relative to repackDir
+							// tar -C repackDir -cf tmpFile.Name .
+							repackCmd := exec.CommandContext(ctx, "tar", "-C", repackDir, "-cf", tmpFileForRepack.Name(), ".")
+							if err := repackCmd.Run(); err != nil {
+								logFn(fmt.Sprintf("  Warning: Failed to repack image (continuing with original): %v", err))
+							}
+							tmpFileForRepack.Close()
+						}
+					}
+				}
 			}
+		}
 
-			// Create a fresh image reader for each node
-			imageReader, err := saveDockerImage(ctx, img)
-			if err != nil {
-				logFn(fmt.Sprintf("  ✗ Failed to export image: %v", err))
-				allNodesSuccess = false
-				break
-			}
+		// 3. Load via `kind load image-archive` command directly instead of using the library
+		// The library implementation seems to have issues with pipes on some environments
+		// and we are already shelling out for docker commands anyway.
 
-			// Load the image into the node
-			err = nodeutils.LoadImageArchive(node, imageReader)
+		logFn(fmt.Sprintf("  Loading archive into cluster nodes..."))
+		loadCmd := exec.CommandContext(ctx, "kind", "load", "image-archive", tmpFile.Name(), "--name", clusterName)
+		out, err := loadCmd.CombinedOutput()
+		_ = out // Prevent unused variable error if we don't use it in success path
+		if err != nil {
+			logFn(fmt.Sprintf("  Warning: Standard load failed, trying legacy import: %v", err))
 
-			// Always close the reader
-			closeErr := imageReader.Close()
-			if closeErr != nil {
-				logFn(fmt.Sprintf("  Warning: Stream close error: %v", closeErr))
-			}
+			// Fallback: Manually copy and import into each node
+			// This works around issues where `kind load` or streaming fails
+			allNodesSuccess = true // assume success unless one node fails
 
-			// Check for load errors
-			if err != nil {
-				logFn(fmt.Sprintf("  ✗ Failed to load into %s: %v", node.String(), err))
-				logFn(fmt.Sprintf("  Hint: This may be an architecture mismatch. Use 'docker inspect %s' to check image architecture", img))
-				allNodesSuccess = false
-				break
+			for _, n := range nodes {
+				// 1. Copy file to node container
+				containerName := n.String()
+				// Use a simpler filename to avoid potential character issues in shell
+				// Copy to root instead of /tmp because /tmp behaves weirdly in some Kind nodes/Docker Desktop setups
+				simpleName := fmt.Sprintf("image-%d.tar", time.Now().UnixNano())
+				targetPath := fmt.Sprintf("/%s", simpleName)
+
+				logFn(fmt.Sprintf("  Copying to %s:%s...", containerName, targetPath))
+				cpCmd := exec.CommandContext(ctx, "docker", "cp", tmpFile.Name(), fmt.Sprintf("%s:%s", containerName, targetPath))
+				if out, err := cpCmd.CombinedOutput(); err != nil {
+					logFn(fmt.Sprintf("  ✗ Failed to copy to node %s: %v (%s)", containerName, err, strings.TrimSpace(string(out))))
+					allNodesSuccess = false
+					continue
+				}
+
+				// 2. Import using ctr inside the node
+				logFn(fmt.Sprintf("  Importing in %s...", containerName))
+				// Try with --no-unpack first as it's often more robust
+				// NOTE: We need to use the path relative to the container filesystem.
+				// The previous copy put it at /tmp/... inside the container.
+				importCmd := exec.CommandContext(ctx, "docker", "exec", containerName, "ctr", "-n", "k8s.io", "images", "import", "--no-unpack", targetPath)
+				out, err := importCmd.CombinedOutput()
+				_ = out // Prevent unused variable error
+
+				if err != nil {
+					// Retry without --no-unpack
+					importCmd = exec.CommandContext(ctx, "docker", "exec", containerName, "ctr", "-n", "k8s.io", "images", "import", targetPath)
+					if out2, err2 := importCmd.CombinedOutput(); err2 != nil {
+						logFn(fmt.Sprintf("  ✗ Failed to import in node %s: %v\nOutput 1: %s\nOutput 2: %s",
+							containerName, err2, strings.TrimSpace(string(out)), strings.TrimSpace(string(out2))))
+						allNodesSuccess = false
+					}
+				}
+
+				// Cleanup temp file in node
+				exec.CommandContext(ctx, "docker", "exec", containerName, "rm", targetPath).Run()
 			}
 		}
 
