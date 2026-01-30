@@ -59,10 +59,6 @@ type confirmModel struct {
 }
 
 // confirmResultMsg is sent when the user makes a choice
-type confirmResultMsg struct {
-	confirmed bool
-	cancelled bool
-}
 
 // Init initializes the model
 func (m confirmModel) Init() tea.Cmd {
