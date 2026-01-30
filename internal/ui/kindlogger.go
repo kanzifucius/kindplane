@@ -7,28 +7,43 @@ import (
 	"sigs.k8s.io/kind/pkg/log"
 )
 
-// KindLogger implements kind's log.Logger interface and sends step updates via channel
+// KindLogger implements kind's log.Logger interface and sends step updates via channel.
+// If done is non-nil, sends are guarded with a select so that no send occurs after done is closed (avoids panic on closed channel).
 type KindLogger struct {
 	updates chan<- StepUpdate
+	done    <-chan struct{} // when closed, logger stops sending (optional)
 	level   log.Level
 }
 
-// NewKindLogger creates a new Logger that sends updates to the provided channel
-func NewKindLogger(updates chan<- StepUpdate) *KindLogger {
+// NewKindLogger creates a new Logger that sends updates to the provided channel.
+// If done is non-nil, it must be closed by the receiver when no more updates are expected; the logger will then avoid sending to a closed channel.
+func NewKindLogger(updates chan<- StepUpdate, done <-chan struct{}) *KindLogger {
 	return &KindLogger{
 		updates: updates,
+		done:    done,
 		level:   1, // Capture V(0) and V(1) messages to get all progress updates
+	}
+}
+
+// sendUpdate sends an update without panicking if the channel was closed (when done is used).
+func (l *KindLogger) sendUpdate(u StepUpdate) {
+	if l.done == nil {
+		l.updates <- u
+		return
+	}
+	select {
+	case l.updates <- u:
+	case <-l.done:
 	}
 }
 
 // Warn implements log.Logger
 func (l *KindLogger) Warn(message string) {
-	// Warnings are typically not progress steps, but we can send them
-	l.updates <- StepUpdate{
+	l.sendUpdate(StepUpdate{
 		Step:    fmt.Sprintf("Warning: %s", message),
 		Done:    true,
 		Success: false,
-	}
+	})
 }
 
 // Warnf implements log.Logger
@@ -38,11 +53,11 @@ func (l *KindLogger) Warnf(format string, args ...interface{}) {
 
 // Error implements log.Logger
 func (l *KindLogger) Error(message string) {
-	l.updates <- StepUpdate{
+	l.sendUpdate(StepUpdate{
 		Step:    fmt.Sprintf("Error: %s", message),
 		Done:    true,
 		Success: false,
-	}
+	})
 }
 
 // Errorf implements log.Logger
@@ -140,11 +155,11 @@ func (i *kindInfoLogger) Info(message string) {
 	isSuccess := isDone && !strings.Contains(strings.ToLower(message), "error")
 
 	// Send update - mark as done only if it's a completion message
-	i.logger.updates <- StepUpdate{
+	i.logger.sendUpdate(StepUpdate{
 		Step:    step,
 		Done:    (isDone || isFailed) && !isInProgress, // Don't mark as done if it's still in progress
 		Success: isSuccess && !isFailed,
-	}
+	})
 }
 
 // Infof implements log.InfoLogger
@@ -217,8 +232,12 @@ type KindDashboardLogger struct {
 	level    log.Level
 }
 
-// NewKindDashboardLogger creates a logger that sends updates to a callback function
+// NewKindDashboardLogger creates a logger that sends updates to a callback function.
+// If updateFn is nil, a no-op is used so methods never panic.
 func NewKindDashboardLogger(updateFn func(step string)) *KindDashboardLogger {
+	if updateFn == nil {
+		updateFn = func(string) {}
+	}
 	return &KindDashboardLogger{
 		updateFn: updateFn,
 		level:    1,
@@ -227,7 +246,9 @@ func NewKindDashboardLogger(updateFn func(step string)) *KindDashboardLogger {
 
 // Warn implements log.Logger
 func (l *KindDashboardLogger) Warn(message string) {
-	l.updateFn(fmt.Sprintf("Warning: %s", message))
+	if l.updateFn != nil {
+		l.updateFn(fmt.Sprintf("Warning: %s", message))
+	}
 }
 
 // Warnf implements log.Logger
@@ -237,7 +258,9 @@ func (l *KindDashboardLogger) Warnf(format string, args ...interface{}) {
 
 // Error implements log.Logger
 func (l *KindDashboardLogger) Error(message string) {
-	l.updateFn(fmt.Sprintf("Error: %s", message))
+	if l.updateFn != nil {
+		l.updateFn(fmt.Sprintf("Error: %s", message))
+	}
 }
 
 // Errorf implements log.Logger

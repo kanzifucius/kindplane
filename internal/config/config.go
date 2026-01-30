@@ -260,7 +260,7 @@ type ChartConfig struct {
 	Version         string                 `yaml:"version,omitempty" comment:"Chart version (optional, latest if omitted)"`
 	Namespace       string                 `yaml:"namespace" comment:"Target namespace"`
 	CreateNamespace *bool                  `yaml:"createNamespace,omitempty" comment:"Create namespace if not exists (default: true)"`
-	Phase           string                 `yaml:"phase,omitempty" comment:"Installation phase: pre-crossplane, post-crossplane, post-providers, post-eso (default)"`
+	Phase           string                 `yaml:"phase,omitempty" comment:"Installation phase: pre-crossplane, post-crossplane, post-providers, final (default), post-eso (deprecated)"`
 	Wait            *bool                  `yaml:"wait,omitempty" comment:"Wait for resources to be ready (default: true)"`
 	Timeout         string                 `yaml:"timeout,omitempty" comment:"Installation timeout (default: 5m)"`
 	Values          map[string]interface{} `yaml:"values,omitempty" comment:"Inline values"`

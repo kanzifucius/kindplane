@@ -183,7 +183,7 @@ func ConfirmWithContext(parentCtx context.Context, message string, opts ...Confi
 	p := tea.NewProgram(model, tea.WithOutput(output))
 	finalModel, err := p.Run()
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to read confirmation: %w", err)
 	}
 
 	// Get the final state

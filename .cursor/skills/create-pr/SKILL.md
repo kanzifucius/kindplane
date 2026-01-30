@@ -33,7 +33,7 @@ Analyse the current branch, check for uncommitted changes, commit if needed usin
      - Wait for user confirmation before proceeding
      - If the user declines, ask if they want to modify the commit message or skip committing
    - Only after user confirmation:
-     - Stage all changes with `git add .`
+     - Stage changes safely: use `git add -u` to stage only tracked files, or run `git status` and explicitly stage specific files (e.g. `git add path/to/file`) so you do not accidentally stage sensitive or untracked files. Avoid blanket `git add .` unless the user has confirmed the full working tree.
      - Create a commit with the confirmed message following the format above
      - Include a commit body if the changes warrant additional explanation
 
@@ -42,22 +42,22 @@ Analyse the current branch, check for uncommitted changes, commit if needed usin
    - Run `git log origin/main..HEAD` (or `origin/master` if main doesn't exist) to see commits not yet on main/master
    - Determine the default branch (check `git remote show origin` or try `main` first, then `master`)
 
-4. **Check if branch is pushed**:
-   - Run `git status` to check if the branch is ahead of origin
-   - If the branch is not pushed, push it with `git push -u origin <branch-name>`
-   - If the branch is already pushed, proceed to step 5
-
-4a. **Check if PR already exists**:
+4. **Check if PR already exists**:
    - Run `gh pr list --head <branch-name>` to check if a PR already exists for this branch
-   - If a PR exists, inform the user and provide the PR URL instead of creating a new one
+   - If a PR exists, inform the user and return the existing PR URL; do not push or create a new PR
    - If no PR exists, proceed to step 5
 
-5. **Analyse commits for PR content**:
+5. **Check if branch is pushed**:
+   - Run `git status` to check if the branch is ahead of origin
+   - If the branch is not pushed, push it with `git push -u origin <branch-name>`
+   - If the branch is already pushed, proceed to step 6
+
+6. **Analyse commits for PR content**:
    - Review all commits on the branch that are not on the default branch
    - Read the commit messages to understand the changes
    - If there are multiple commits, analyse them collectively to understand the overall change
 
-6. **Create PR title**:
+7. **Create PR title**:
    - Based on the commit(s), create a clear, concise PR title
    - Use conventional commit format but make it more descriptive:
      - `feat(scope): Add <feature description>`
@@ -67,7 +67,7 @@ Analyse the current branch, check for uncommitted changes, commit if needed usin
      - `chore(scope): <maintenance task>`
    - The title should be clear and descriptive, suitable for a PR title
 
-7. **Create PR description**:
+8. **Create PR description**:
    - Structure the description with the following sections:
    
    ## Description
@@ -96,34 +96,34 @@ Analyse the current branch, check for uncommitted changes, commit if needed usin
    - [ ] Tests added/updated (if applicable)
    - [ ] No breaking changes (or breaking changes documented)
 
-8. **Create the Pull Request**:
+9. **Create the Pull Request**:
    - **Get repository information**:
      - Run `git remote get-url origin` to get the repository URL
      - Extract owner and repo name (e.g., `kanzifucius/kindplane` from `git@github.com:kanzifucius/kindplane.git`)
    
    - **First, try to use the GitHub MCP tools** to create the PR:
      - Use the repository owner and name from above
-     - Set the title from step 6
-     - Set the description from step 7
+     - Set the title from step 7
+     - Set the description from step 8
      - Set the base branch to `main` (or `master` if main doesn't exist)
      - Set the head branch to the current branch
      - If there are related issues, include them in the description
    
    - **If MCP tools are not available or fail**, use the GitHub CLI (`gh`) as a fallback:
      - **Verify gh CLI is authenticated**: Run `gh auth status` to confirm authentication
-     - **Create temporary file**: Write the PR description to `/tmp/pr-body.md` (or `/tmp/pr-description.md`) using the write tool
-     - **Create PR**: Run `gh pr create --title "<title from step 6>" --body-file /tmp/pr-body.md --base <default-branch> --head <current-branch>`
+     - **Create temporary files**: Using the write tool, write the PR title to `/tmp/pr-title.txt` and the PR description to `/tmp/pr-body.md` so neither is interpolated into the shell command
+     - **Create PR**: Run `gh pr create --title-file /tmp/pr-title.txt --body-file /tmp/pr-body.md --base <default-branch> --head <current-branch>`
      - **Handle errors**: 
-       - If TLS/certificate errors occur, try running with `required_permissions: ['all']` to bypass sandbox restrictions
+       - If TLS/certificate errors occur when running `gh pr create`, request sandbox bypass for that command only: when invoking the run tool (e.g. Cursor’s terminal/sandbox executor), pass `required_permissions: ['all']` so the command runs outside the sandbox. Use only when necessary; this disables sandbox isolation for that single run.
        - If authentication fails, inform the user they need to run `gh auth login`
        - If the command fails, check error message and retry or inform user
-     - **Clean up**: Always delete the temporary file after creating the PR (success or failure)
+     - **Clean up**: Always delete the temporary files (`/tmp/pr-title.txt` and `/tmp/pr-body.md`) after creating the PR (success or failure)
    
    - **Verify PR was created**:
      - The command should output a PR URL (e.g., `https://github.com/owner/repo/pull/15`)
      - If no URL is returned, check for errors and inform the user
 
-9. **Report**:
+10. **Report**:
    - Summarise what was done:
      - Whether any commits were created (if step 2 was executed)
      - The commit message(s) used (if any)
@@ -142,9 +142,9 @@ Analyse the current branch, check for uncommitted changes, commit if needed usin
 - If multiple commits exist, the PR should reflect the overall change, not just the latest commit
 - Check for any linting or test failures before creating the PR
 - Always check if a PR already exists for the branch before creating a new one
-- When using `gh` CLI, create the body file explicitly using the write tool before running the command
-- Handle TLS/certificate errors by using `required_permissions: ['all']` if needed
-- Always clean up temporary files after PR creation (success or failure)
+- When using `gh` CLI, create the title and body files explicitly using the write tool (e.g. `/tmp/pr-title.txt` and `/tmp/pr-body.md`) before running the command; use `--title-file` and `--body-file` so the title and body are not interpolated into the shell
+- If TLS/certificate errors occur with `gh pr create`, use the run tool with `required_permissions: ['all']` for that command only (Cursor’s sandbox bypass). Use sparingly; it disables sandbox isolation for that run.
+- Always clean up temporary files (`/tmp/pr-title.txt` and `/tmp/pr-body.md`) after PR creation (success or failure)
 - Verify `gh auth status` before attempting to create PR with gh CLI
 - Extract repository owner/name from git remote URL for use with MCP tools
 - Always include the PR URL in the final report

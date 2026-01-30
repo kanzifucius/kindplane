@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -87,7 +88,7 @@ func runRemove(cmd *cobra.Command, args []string) error {
 	if !removeForce {
 		confirm, err := ui.ConfirmWithContext(ctx, fmt.Sprintf("Remove provider '%s'? Managed resources may become orphaned.", providerName))
 		if err != nil {
-			if err == ui.ErrCancelled {
+			if errors.Is(err, ui.ErrCancelled) {
 				fmt.Println(ui.Warning("Removal cancelled"))
 				return nil
 			}

@@ -79,6 +79,12 @@ func lookupConfigComment(t reflect.Type, fieldName string) string {
 	if fieldName == "" {
 		return ""
 	}
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return ""
+	}
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
 		if f.Name == fieldName {

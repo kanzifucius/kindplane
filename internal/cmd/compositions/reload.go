@@ -2,6 +2,7 @@ package compositions
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -157,11 +158,14 @@ func runReload(cmd *cobra.Command, args []string) error {
 	)
 
 	if err != nil {
-		return err
+		return fmt.Errorf("reload request failed: %w", err)
 	}
 
 	if !result.Success {
-		return result.Error
+		if result.Error != nil {
+			return fmt.Errorf("reload failed: %w", result.Error)
+		}
+		return errors.New("reload failed: unknown error")
 	}
 
 	return nil

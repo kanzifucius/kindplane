@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -62,7 +63,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 	if !downForce {
 		confirm, err := ui.ConfirmWithContext(ctx, fmt.Sprintf("Delete cluster '%s'? This cannot be undone.", clusterName))
 		if err != nil {
-			if err == ui.ErrCancelled {
+			if errors.Is(err, ui.ErrCancelled) {
 				printWarn("Deletion cancelled")
 				return nil
 			}

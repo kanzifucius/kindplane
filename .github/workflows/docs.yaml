@@ -153,6 +153,7 @@ jobs:
           echo "Documentation version $VERSION deleted."
 
       - name: Deploy schema documentation
+        if: github.event_name == 'workflow_dispatch'
         run: |
           VERSION="${{ github.event.inputs.version }}"
           echo "Deploying schema: $VERSION"

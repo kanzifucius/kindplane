@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -158,15 +159,19 @@ func buildMapNode(val reflect.Value, typ reflect.Type) (*yaml.Node, error) {
 		Content: []*yaml.Node{},
 	}
 
-	iter := val.MapRange()
-	for iter.Next() {
-		keyVal := iter.Key()
-		valueVal := iter.Value()
+	keys := val.MapKeys()
+	sort.Slice(keys, func(i, j int) bool {
+		return fmt.Sprintf("%v", keys[i].Interface()) < fmt.Sprintf("%v", keys[j].Interface())
+	})
+
+	for _, k := range keys {
+		keyStr := fmt.Sprintf("%v", k.Interface())
+		valueVal := val.MapIndex(k)
 
 		keyNode := &yaml.Node{
 			Kind:  yaml.ScalarNode,
 			Tag:   "!!str",
-			Value: fmt.Sprintf("%v", keyVal.Interface()),
+			Value: keyStr,
 		}
 
 		valueNode, err := buildNode(valueVal, valueVal.Type())

@@ -137,7 +137,7 @@ kindplane down --force
 **💡 Tip**: Pre-pull images once for faster subsequent bootstraps:
 ```bash
 docker pull crossplane/crossplane:v1.15.0
-docker pull xpkg.upbound.io/upbound/provider-aws-controller:v1.1.0
+docker pull xpkg.upbound.io/upbound/provider-aws-s3:v1.1.0
 # Then kindplane up will use cached images
 ```
 

@@ -122,8 +122,12 @@ type cmdReader struct {
 }
 
 func (r *cmdReader) Close() error {
-	r.ReadCloser.Close()
-	return r.cmd.Wait()
+	errClose := r.ReadCloser.Close()
+	errWait := r.cmd.Wait()
+	if errClose != nil {
+		return errClose
+	}
+	return errWait
 }
 
 // PullImages pulls Docker images from remote registries
@@ -202,19 +206,17 @@ func PreloadImages(ctx context.Context, clusterName string, cfg *config.Config, 
 
 	// Choose mode based on registry configuration
 	var loadErr error
+	var loaded int
 	if cfg.Cluster.Registry.Enabled {
 		// Registry mode: Push to local registry
 		registryHost := fmt.Sprintf("localhost:%d", cfg.Cluster.Registry.GetPort())
-		loadErr = pushImagesToRegistry(ctx, localImages, registryHost, logFn)
+		loaded, loadErr = pushImagesToRegistry(ctx, localImages, registryHost, logFn)
 	} else {
 		// Direct mode: Load into Kind nodes
-		loadErr = loadImagesIntoNodes(ctx, clusterName, localImages, logFn)
+		loaded, loadErr = loadImagesIntoNodes(ctx, clusterName, localImages, logFn)
 	}
 
-	if loadErr == nil {
-		result.LoadedCount = len(localImages)
-	}
-
+	result.LoadedCount = loaded
 	return result, loadErr
 }
 
@@ -375,7 +377,7 @@ func imageExistsLocally(ctx context.Context, imageName string) (bool, error) {
 }
 
 // pushImagesToRegistry pushes local images to the local registry
-func pushImagesToRegistry(ctx context.Context, images []string, registryHost string, logFn func(string)) error {
+func pushImagesToRegistry(ctx context.Context, images []string, registryHost string, logFn func(string)) (int, error) {
 	successCount := 0
 
 	for _, img := range images {
@@ -403,9 +405,9 @@ func pushImagesToRegistry(ctx context.Context, images []string, registryHost str
 
 	if successCount > 0 {
 		logFn(fmt.Sprintf("Pre-loaded %d images to registry", successCount))
+		return successCount, nil
 	}
-
-	return nil
+	return 0, fmt.Errorf("failed to push any images to registry")
 }
 
 // retagForRegistry retags an image for the local registry
@@ -427,18 +429,18 @@ func retagForRegistry(imageName, registryHost string) string {
 }
 
 // loadImagesIntoNodes loads images directly into Kind nodes using Kind SDK
-func loadImagesIntoNodes(ctx context.Context, clusterName string, images []string, logFn func(string)) error {
+func loadImagesIntoNodes(ctx context.Context, clusterName string, images []string, logFn func(string)) (int, error) {
 	// Get Kind provider
 	provider := cluster.NewProvider()
 
 	// List all nodes in the cluster
 	nodes, err := provider.ListNodes(clusterName)
 	if err != nil {
-		return fmt.Errorf("failed to list nodes: %w", err)
+		return 0, fmt.Errorf("failed to list nodes: %w", err)
 	}
 
 	if len(nodes) == 0 {
-		return fmt.Errorf("no nodes found in cluster %s", clusterName)
+		return 0, fmt.Errorf("no nodes found in cluster %s", clusterName)
 	}
 
 	logFn(fmt.Sprintf("Loading images into %d node(s)", len(nodes)))
@@ -469,14 +471,15 @@ func loadImagesIntoNodes(ctx context.Context, clusterName string, images []strin
 			logFn(fmt.Sprintf("  ✗ Failed to create temp file: %v", err))
 			continue
 		}
-		defer os.Remove(tmpFile.Name()) // Clean up
+		tmpFileName := tmpFile.Name()
 
 		// 2. Save image to the temporary file
 		logFn(fmt.Sprintf("  Exporting image to temp file..."))
-		saveCmd := exec.CommandContext(ctx, "docker", "save", "-o", tmpFile.Name(), img)
+		saveCmd := exec.CommandContext(ctx, "docker", "save", "-o", tmpFileName, img)
 		if out, err := saveCmd.CombinedOutput(); err != nil {
 			logFn(fmt.Sprintf("  ✗ Failed to save image: %v (%s)", err, strings.TrimSpace(string(out))))
 			tmpFile.Close()
+			_ = os.Remove(tmpFileName)
 			continue
 		}
 		tmpFile.Close() // Close so we can read it again
@@ -497,10 +500,8 @@ func loadImagesIntoNodes(ctx context.Context, clusterName string, images []strin
 			// Create a temporary directory for repackaging
 			repackDir, err := os.MkdirTemp("", "kind-repack-*")
 			if err == nil {
-				defer os.RemoveAll(repackDir)
-
 				// Unpack tarball
-				unpackCmd := exec.CommandContext(ctx, "tar", "-xf", tmpFile.Name(), "-C", repackDir)
+				unpackCmd := exec.CommandContext(ctx, "tar", "-xf", tmpFileName, "-C", repackDir)
 				if err := unpackCmd.Run(); err == nil {
 					// Check if index.json exists
 					if _, err := os.Stat(fmt.Sprintf("%s/index.json", repackDir)); err == nil {
@@ -510,10 +511,9 @@ func loadImagesIntoNodes(ctx context.Context, clusterName string, images []strin
 
 						// Repack into the temp file (overwriting it)
 						// Note: We need to recreate the file
-						tmpFileForRepack, err := os.Create(tmpFile.Name())
+						tmpFileForRepack, err := os.Create(tmpFileName)
 						if err == nil {
 							// Tar command to repack relative to repackDir
-							// tar -C repackDir -cf tmpFile.Name .
 							repackCmd := exec.CommandContext(ctx, "tar", "-C", repackDir, "-cf", tmpFileForRepack.Name(), ".")
 							if err := repackCmd.Run(); err != nil {
 								logFn(fmt.Sprintf("  Warning: Failed to repack image (continuing with original): %v", err))
@@ -522,6 +522,7 @@ func loadImagesIntoNodes(ctx context.Context, clusterName string, images []strin
 						}
 					}
 				}
+				_ = os.RemoveAll(repackDir)
 			}
 		}
 
@@ -530,7 +531,7 @@ func loadImagesIntoNodes(ctx context.Context, clusterName string, images []strin
 		// and we are already shelling out for docker commands anyway.
 
 		logFn(fmt.Sprintf("  Loading archive into cluster nodes..."))
-		loadCmd := exec.CommandContext(ctx, "kind", "load", "image-archive", tmpFile.Name(), "--name", clusterName)
+		loadCmd := exec.CommandContext(ctx, "kind", "load", "image-archive", tmpFileName, "--name", clusterName)
 		out, err := loadCmd.CombinedOutput()
 		_ = out // Prevent unused variable error if we don't use it in success path
 		if err != nil {
@@ -549,7 +550,7 @@ func loadImagesIntoNodes(ctx context.Context, clusterName string, images []strin
 				targetPath := fmt.Sprintf("/%s", simpleName)
 
 				logFn(fmt.Sprintf("  Copying to %s:%s...", containerName, targetPath))
-				cpCmd := exec.CommandContext(ctx, "docker", "cp", tmpFile.Name(), fmt.Sprintf("%s:%s", containerName, targetPath))
+				cpCmd := exec.CommandContext(ctx, "docker", "cp", tmpFileName, fmt.Sprintf("%s:%s", containerName, targetPath))
 				if out, err := cpCmd.CombinedOutput(); err != nil {
 					logFn(fmt.Sprintf("  ✗ Failed to copy to node %s: %v (%s)", containerName, err, strings.TrimSpace(string(out))))
 					allNodesSuccess = false
@@ -576,9 +577,13 @@ func loadImagesIntoNodes(ctx context.Context, clusterName string, images []strin
 				}
 
 				// Cleanup temp file in node
-				exec.CommandContext(ctx, "docker", "exec", containerName, "rm", targetPath).Run()
+				if rmErr := exec.CommandContext(ctx, "docker", "exec", containerName, "rm", targetPath).Run(); rmErr != nil {
+					logFn(fmt.Sprintf("  Warning: failed to remove temp file %s in %s: %v", targetPath, containerName, rmErr))
+				}
 			}
 		}
+
+		_ = os.Remove(tmpFileName)
 
 		if allNodesSuccess {
 			logFn(fmt.Sprintf("  ✓ Loaded successfully"))
@@ -588,11 +593,10 @@ func loadImagesIntoNodes(ctx context.Context, clusterName string, images []strin
 
 	if successCount > 0 {
 		logFn(fmt.Sprintf("Pre-loaded %d/%d images into Kind nodes", successCount, len(images)))
-	} else {
-		logFn("No images were successfully loaded")
+		return successCount, nil
 	}
-
-	return nil
+	logFn("No images were successfully loaded")
+	return 0, fmt.Errorf("failed to load any images into Kind nodes")
 }
 
 // saveDockerImage exports a Docker image as a tar stream

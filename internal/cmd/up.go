@@ -421,8 +421,8 @@ func executeBootstrap(ctx context.Context, pt *ui.PhaseTracker, ctrl *ui.Dashboa
 			}
 		} else {
 			// Print mode: use multi-step UI
-			if err := ui.RunClusterCreate(ctx, cfg.Cluster.Name, func(ctx context.Context, updates chan<- ui.StepUpdate) error {
-				logger := ui.NewKindLogger(updates)
+			if err := ui.RunClusterCreate(ctx, cfg.Cluster.Name, func(ctx context.Context, updates chan<- ui.StepUpdate, done <-chan struct{}) error {
+				logger := ui.NewKindLogger(updates, done)
 				return kind.CreateClusterWithProgress(ctx, cfg, logger)
 			}); err != nil {
 				return handleFailure(phaseCluster, fmt.Errorf("failed to create cluster: %w", err))

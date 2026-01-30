@@ -46,4 +46,7 @@ func TestDefaultConfigWithComments(t *testing.T) {
 	if cfg.Cluster.KubernetesVersion != defaultCfg.Cluster.KubernetesVersion {
 		t.Errorf("Kubernetes version mismatch: got %s, want %s", cfg.Cluster.KubernetesVersion, defaultCfg.Cluster.KubernetesVersion)
 	}
+	if cfg.Crossplane.Version != defaultCfg.Crossplane.Version {
+		t.Errorf("Crossplane version mismatch: got %s, want %s", cfg.Crossplane.Version, defaultCfg.Crossplane.Version)
+	}
 }

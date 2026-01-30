@@ -170,7 +170,7 @@ func TestGetContextName(t *testing.T) {
 
 ### Concurrency Patterns
 
-- Set channels to `nil` after closing to prevent busy-loops in select
+- When a receive operation returns `ok==false`, the receiver should set its channel variable to `nil` to prevent that select case from firing (avoids busy-loops); the closer does not set the channel to nil—the receiver does
 - Use `k8s.io/apimachinery/pkg/util/wait` for retry/backoff patterns
 - Avoid spawning goroutines in loops without proper lifecycle management
 

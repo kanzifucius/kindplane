@@ -63,12 +63,13 @@ type multiStepModel struct {
 	err           error
 	done          bool
 	cancelled     bool
-	fn            func(ctx context.Context, updates chan<- StepUpdate) error
+	fn            func(ctx context.Context, updates chan<- StepUpdate, done <-chan struct{}) error
 	state         *CancellableState
 	started       bool
 	updates       chan StepUpdate
-	workDone      chan error // Channel to signal work completion with error
-	updatesClosed bool       // Track if updates channel is closed
+	doneCh        chan struct{} // Closed when work is done so loggers stop sending
+	workDone      chan error    // Channel to signal work completion with error
+	updatesClosed bool          // Track if updates channel is closed
 }
 
 // Message types for the multi-step model
@@ -183,7 +184,8 @@ func (m multiStepModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m multiStepModel) startWork() tea.Cmd {
 	return func() tea.Msg {
 		go func() {
-			err := m.fn(m.state.Ctx, m.updates)
+			err := m.fn(m.state.Ctx, m.updates, m.doneCh)
+			close(m.doneCh) // Signal loggers to stop sending before we close updates
 			close(m.updates)
 			m.workDone <- err
 		}()
@@ -267,7 +269,7 @@ func (m multiStepModel) View() string {
 //
 // Options:
 //   - WithMultiStepOutput(w): Set custom output writer (default: package default output)
-func RunMultiStep(parentCtx context.Context, title string, fn func(ctx context.Context, updates chan<- StepUpdate) error, opts ...MultiStepOption) error {
+func RunMultiStep(parentCtx context.Context, title string, fn func(ctx context.Context, updates chan<- StepUpdate, done <-chan struct{}) error, opts ...MultiStepOption) error {
 	options := defaultMultiStepOptions()
 	for _, opt := range opts {
 		opt(options)
@@ -280,6 +282,7 @@ func RunMultiStep(parentCtx context.Context, title string, fn func(ctx context.C
 
 	state := NewCancellableState(parentCtx)
 	updates := make(chan StepUpdate, 10)
+	done := make(chan struct{})
 	workDone := make(chan error, 1)
 
 	m := multiStepModel{
@@ -290,6 +293,7 @@ func RunMultiStep(parentCtx context.Context, title string, fn func(ctx context.C
 		fn:        fn,
 		state:     state,
 		updates:   updates,
+		doneCh:    done,
 		workDone:  workDone,
 	}
 
@@ -324,19 +328,22 @@ func RunMultiStep(parentCtx context.Context, title string, fn func(ctx context.C
 }
 
 // runMultiStepNonTTY handles non-TTY fallback for multi-step operations
-func runMultiStepNonTTY(parentCtx context.Context, title string, fn func(ctx context.Context, updates chan<- StepUpdate) error, output io.Writer) error {
+func runMultiStepNonTTY(parentCtx context.Context, title string, fn func(ctx context.Context, updates chan<- StepUpdate, done <-chan struct{}) error, output io.Writer) error {
 	printNonTTYNoticeTo(output)
 	_, _ = fmt.Fprintf(output, "%s %s...\n", IconRunning, title)
 
 	updates := make(chan StepUpdate, 10)
+	done := make(chan struct{})
 	ctx, cancel := context.WithCancel(parentCtx)
 	defer cancel()
 
 	// Start work in background
 	workDone := make(chan error, 1)
 	go func() {
-		workDone <- fn(ctx, updates)
+		err := fn(ctx, updates, done)
+		close(done)
 		close(updates)
+		workDone <- err
 	}()
 
 	// Process updates
@@ -394,7 +401,7 @@ func runMultiStepNonTTY(parentCtx context.Context, title string, fn func(ctx con
 //
 // Options:
 //   - WithMultiStepOutput(w): Set custom output writer (default: package default output)
-func RunClusterCreate(parentCtx context.Context, clusterName string, fn func(ctx context.Context, updates chan<- StepUpdate) error, opts ...MultiStepOption) error {
+func RunClusterCreate(parentCtx context.Context, clusterName string, fn func(ctx context.Context, updates chan<- StepUpdate, done <-chan struct{}) error, opts ...MultiStepOption) error {
 	title := fmt.Sprintf("Creating Kind cluster '%s'", clusterName)
 	return RunMultiStep(parentCtx, title, fn, opts...)
 }
