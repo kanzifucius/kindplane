@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"sigs.k8s.io/kind/pkg/log"
 )
@@ -10,8 +11,9 @@ import (
 // KindLogger implements kind's log.Logger interface and sends step updates via channel.
 // If done is non-nil, sends are guarded with a select so that no send occurs after done is closed (avoids panic on closed channel).
 type KindLogger struct {
+	mu      sync.Mutex
 	updates chan<- StepUpdate
-	done    <-chan struct{} // when closed, logger stops sending (optional)
+	done    <-chan struct{} // when closed, logger stops sending (optional); set to nil under mu once observed closed
 	level   log.Level
 }
 
@@ -26,14 +28,22 @@ func NewKindLogger(updates chan<- StepUpdate, done <-chan struct{}) *KindLogger 
 }
 
 // sendUpdate sends an update without panicking if the channel was closed (when done is used).
+// Uses mu to guard l.done: we read done into a local under lock, then select on that local so we never race with l.done being set to nil. Once we observe done closed we set l.done = nil under lock so future sends stop selecting on it.
 func (l *KindLogger) sendUpdate(u StepUpdate) {
-	if l.done == nil {
+	l.mu.Lock()
+	doneCh := l.done
+	l.mu.Unlock()
+
+	if doneCh == nil {
 		l.updates <- u
 		return
 	}
 	select {
 	case l.updates <- u:
-	case <-l.done:
+	case <-doneCh:
+		l.mu.Lock()
+		l.done = nil
+		l.mu.Unlock()
 	}
 }
 

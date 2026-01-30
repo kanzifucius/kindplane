@@ -44,7 +44,7 @@ func runReload(cmd *cobra.Command, args []string) error {
 	cfg, err := config.Load("")
 	if err != nil {
 		fmt.Println(ui.Error("Failed to load config: %v", err))
-		return err
+		return fmt.Errorf("loading config failed: %w", err)
 	}
 
 	// Check if there are any composition sources
@@ -62,7 +62,7 @@ func runReload(cmd *cobra.Command, args []string) error {
 	exists, err := kind.ClusterExists(cfg.Cluster.Name)
 	if err != nil {
 		fmt.Println(ui.Error("Failed to check cluster: %v", err))
-		return err
+		return fmt.Errorf("checking cluster existence failed: %w", err)
 	}
 	if !exists {
 		fmt.Println(ui.Error("Cluster '%s' not found. Run 'kindplane up' first.", cfg.Cluster.Name))
@@ -73,7 +73,7 @@ func runReload(cmd *cobra.Command, args []string) error {
 	kubeClient, err := kind.GetKubeClient(cfg.Cluster.Name)
 	if err != nil {
 		fmt.Println(ui.Error("Failed to connect to cluster: %v", err))
-		return err
+		return fmt.Errorf("getting kube client failed: %w", err)
 	}
 
 	// Create phase tracker for dashboard-style visuals
