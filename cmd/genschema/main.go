@@ -3,6 +3,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -14,12 +15,27 @@ import (
 )
 
 const (
-	schemaID    = "https://raw.githubusercontent.com/kanzifucius/kindplane/main/kindplane.schema.json"
-	schemaDraft = "http://json-schema.org/draft-07/schema#"
-	outputPath  = "kindplane.schema.json"
+	defaultSchemaID = "https://raw.githubusercontent.com/kanzifucius/kindplane/main/kindplane.schema.json"
+	schemaDraft     = "http://json-schema.org/draft-07/schema#"
+	defaultOutput   = "kindplane.schema.json"
+	ghPagesBase     = "https://kanzifucius.github.io/kindplane"
 )
 
 func main() {
+	var version = flag.String("version", "", "Version for schema $id (e.g., '1.0.0', 'dev', 'latest'). If empty, uses raw GitHub URL")
+	var output = flag.String("output", defaultOutput, "Output file path")
+	flag.Parse()
+
+	// Determine schema ID based on version
+	var schemaID string
+	if *version != "" {
+		// Use GitHub Pages URL for versioned schemas
+		schemaID = fmt.Sprintf("%s/%s/kindplane.schema.json", ghPagesBase, *version)
+	} else {
+		// Default to raw GitHub URL for backward compatibility
+		schemaID = defaultSchemaID
+	}
+
 	r := &jsonschema.Reflector{
 		AllowAdditionalProperties: false,
 		ExpandedStruct:            true,
@@ -64,14 +80,10 @@ func main() {
 	s = strings.ReplaceAll(s, "#/$defs/", "#/definitions/")
 	data = []byte(s)
 
-	out := outputPath
-	if len(os.Args) > 1 {
-		out = os.Args[1]
+	if err := os.WriteFile(*output, data, 0644); err != nil {
+		log.Fatalf("Write %s: %v", *output, err)
 	}
-	if err := os.WriteFile(out, data, 0644); err != nil {
-		log.Fatalf("Write %s: %v", out, err)
-	}
-	fmt.Printf("Wrote %s\n", out)
+	fmt.Printf("Wrote %s (schema $id: %s)\n", *output, schemaID)
 }
 
 // lookupConfigComment returns description from config struct "comment" and "doc" tags.

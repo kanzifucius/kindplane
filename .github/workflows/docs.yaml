@@ -74,11 +74,34 @@ jobs:
           go-version: "1.25"
           cache: true
 
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            # Extract version from tag (e.g., v1.0.0 -> 1.0.0)
+            VERSION="${{ github.event.workflow_run.head_branch }}"
+            VERSION=${VERSION#v}
+            echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+            echo "Detected version from release: ${VERSION}"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Use manual input version
+            VERSION="${{ github.event.inputs.version }}"
+            echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+            echo "Using manual version: ${VERSION}"
+          else
+            # Default to dev for main branch pushes
+            VERSION="dev"
+            echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+            echo "Using default version: ${VERSION}"
+          fi
+
       - name: Generate CLI documentation
         run: go run ./cmd/gendocs
 
-      - name: Generate schema documentation
-        run: go run ./cmd/genschema
+      - name: Generate versioned schema
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          go run ./cmd/genschema --version="${VERSION}" --output=docs/kindplane.schema.json
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -151,11 +174,3 @@ jobs:
           echo "Deleting version: $VERSION"
           mike delete --push $VERSION
           echo "Documentation version $VERSION deleted."
-
-      - name: Deploy schema documentation
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          VERSION="${{ github.event.inputs.version }}"
-          echo "Deploying schema: $VERSION"
-          mike deploy --push --update-aliases $VERSION latest
-          mike set-default --push latest

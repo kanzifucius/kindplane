@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       code: ${{ steps.filter.outputs.code }}
+      config: ${{ steps.filter.outputs.config }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,6 +27,45 @@ jobs:
               - '.github/workflows/ci.yaml'
               - 'Makefile'
               - 'Taskfile.yaml'
+            config:
+              - 'internal/config/**'
+              - 'cmd/genschema/**'
+
+  schema-check:
+    name: Schema Verification
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.config == 'true' || needs.changes.outputs.code == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Generate schema
+        run: go run ./cmd/genschema --output=kindplane.schema.json.new
+
+      - name: Verify schema is up-to-date
+        run: |
+          if [ -f kindplane.schema.json ]; then
+            if ! diff -q kindplane.schema.json kindplane.schema.json.new > /dev/null 2>&1; then
+              echo "::error::Schema is out of date. Run 'task schema:generate' to regenerate."
+              echo "Diff:"
+              diff kindplane.schema.json kindplane.schema.json.new || true
+              exit 1
+            else
+              echo "✓ Schema is up-to-date"
+            fi
+          else
+            echo "::warning::kindplane.schema.json not found in repository. This is expected for new repositories."
+          fi
 
   test:
     name: Test
@@ -107,13 +147,15 @@ jobs:
   ci-status:
     name: CI Status
     runs-on: ubuntu-latest
-    needs: [changes, test, build]
+    needs: [changes, schema-check, test, build]
     if: always()
     steps:
       - name: Check CI status
         run: |
           echo "Changes result: ${{ needs.changes.result }}"
           echo "Changes detected: ${{ needs.changes.outputs.code }}"
+          echo "Config changes detected: ${{ needs.changes.outputs.config }}"
+          echo "Schema check result: ${{ needs.schema-check.result }}"
           echo "Test result: ${{ needs.test.result }}"
           echo "Build result: ${{ needs.build.result }}"
 
@@ -129,15 +171,25 @@ jobs:
             exit 0
           fi
 
-          # If code changed, check that test and build passed
-          if [[ "${{ needs.test.result }}" == "failure" || "${{ needs.test.result }}" == "cancelled" ]]; then
-            echo "Test job failed"
-            exit 1
+          # If config changed, check that schema verification passed
+          if [[ "${{ needs.changes.outputs.config }}" == "true" ]]; then
+            if [[ "${{ needs.schema-check.result }}" == "failure" || "${{ needs.schema-check.result }}" == "cancelled" ]]; then
+              echo "Schema verification failed"
+              exit 1
+            fi
           fi
 
-          if [[ "${{ needs.build.result }}" == "failure" || "${{ needs.build.result }}" == "cancelled" ]]; then
-            echo "Build job failed"
-            exit 1
+          # If code changed, check that test and build passed
+          if [[ "${{ needs.changes.outputs.code }}" == "true" ]]; then
+            if [[ "${{ needs.test.result }}" == "failure" || "${{ needs.test.result }}" == "cancelled" ]]; then
+              echo "Test job failed"
+              exit 1
+            fi
+
+            if [[ "${{ needs.build.result }}" == "failure" || "${{ needs.build.result }}" == "cancelled" ]]; then
+              echo "Build job failed"
+              exit 1
+            fi
           fi
 
           echo "CI passed"
