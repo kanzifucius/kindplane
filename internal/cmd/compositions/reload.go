@@ -87,8 +87,12 @@ func runReload(cmd *cobra.Command, args []string) error {
 		pt.AddPhase(phaseName)
 	}
 
-	// Create context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), reloadTimeout)
+	// Create context with timeout; use command context so upstream cancellation (e.g. Ctrl+C) is honoured
+	parent := cmd.Context()
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, reloadTimeout)
 	defer cancel()
 
 	// Work function that reloads compositions
@@ -101,7 +105,7 @@ func runReload(cmd *cobra.Command, args []string) error {
 			// Check for cancellation
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return fmt.Errorf("reload cancelled: %w", ctx.Err())
 			default:
 			}
 

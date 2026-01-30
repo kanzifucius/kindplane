@@ -11,11 +11,11 @@ import (
 // KindLogger implements kind's log.Logger interface and sends step updates via channel.
 // If done is non-nil, sends are guarded with a select so that no send occurs after done is closed (avoids panic on closed channel).
 type KindLogger struct {
-	mu         sync.Mutex
-	updates    chan<- StepUpdate
-	done       <-chan struct{} // when closed, logger stops sending (optional)
-	doneClosed bool            // true once done was observed closed; protected by mu
-	level      log.Level
+	mu      sync.Mutex
+	updates chan<- StepUpdate
+	done    <-chan struct{} // when closed, logger stops sending (optional); set to nil under mu once observed closed
+	closed  bool            // true once done was observed closed; protected by mu; no sends after this
+	level   log.Level
 }
 
 // NewKindLogger creates a new Logger that sends updates to the provided channel.
@@ -29,18 +29,24 @@ func NewKindLogger(updates chan<- StepUpdate, done <-chan struct{}) *KindLogger 
 }
 
 // sendUpdate sends an update without panicking if the channel was closed (when done is used).
-// Uses mu to guard l.done and l.doneClosed: we read both into locals under lock. If doneClosed is true we drop.
-// If done is nil we send unconditionally. Otherwise we select between send and <-done; if done fires we set doneClosed = true under mu.
+// Uses mu to guard l.done and l.closed: we read both into locals under lock. If closed is true we drop.
+// If done is nil we re-check closed under lock and only then send; otherwise we select between send and <-done; if done fires we set l.done = nil and l.closed = true under mu.
 func (l *KindLogger) sendUpdate(u StepUpdate) {
 	l.mu.Lock()
 	doneCh := l.done
-	doneClosed := l.doneClosed
+	closed := l.closed
 	l.mu.Unlock()
 
-	if doneClosed {
+	if closed {
 		return
 	}
 	if doneCh == nil {
+		l.mu.Lock()
+		if l.closed {
+			l.mu.Unlock()
+			return
+		}
+		l.mu.Unlock()
 		l.updates <- u
 		return
 	}
@@ -48,7 +54,8 @@ func (l *KindLogger) sendUpdate(u StepUpdate) {
 	case l.updates <- u:
 	case <-doneCh:
 		l.mu.Lock()
-		l.doneClosed = true
+		l.done = nil
+		l.closed = true
 		l.mu.Unlock()
 	}
 }

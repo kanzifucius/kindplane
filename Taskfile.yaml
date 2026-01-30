@@ -414,3 +414,22 @@ tasks:
     desc: Remove generated VHS recordings
     cmds:
       - rm -rf docs/assets/vhs/*.gif
+
+  dev:run-smoke-up:
+    desc: "Run smoke test for up command"
+    deps: [build]
+    dir: bin
+    cmds:
+      - ./{{.BINARY_NAME}} down --force
+      - ./{{.BINARY_NAME}} up
+      - ./{{.BINARY_NAME}} status
+      - ./{{.BINARY_NAME}} down --force
+  dev:pre-commit:
+    desc: "Run pre-commit checks"
+    deps: [lint, test]
+    cmds:
+      - task: lint
+      - task: test
+      - task: docs:generate
+      - task: schema:generate
+      - task: vhs:all
