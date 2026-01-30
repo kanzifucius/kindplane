@@ -138,24 +138,38 @@ func buildPhases() *ui.PhaseTracker {
 	return pt
 }
 
-// shouldPreloadImages determines if image pre-loading should be attempted
+// shouldPreloadImages determines if image pre-loading should be attempted.
+// We run the phase whenever we are installing Crossplane and image cache is not
+// explicitly disabled, so that "Pre-load images" appears in the UI and we
+// attempt to load/push images (PreloadImages no-ops when there are 0 images).
 func shouldPreloadImages(cfg *config.Config) bool {
 	// Skip if Crossplane installation is skipped
 	if upSkipCrossplane {
 		return false
 	}
 
-	// Skip if explicitly disabled
+	// Skip only if image cache is explicitly disabled
 	if cfg.Crossplane.ImageCache != nil && !cfg.Crossplane.ImageCache.IsEnabled() {
 		return false
 	}
 
-	// Check if there are any providers or Crossplane to preload
+	// Run preload phase whenever cache is enabled (or unset, default enabled):
+	// we have something to preload if any of these are true
 	hasProviders := len(cfg.Crossplane.Providers) > 0 && (cfg.Crossplane.ImageCache == nil || cfg.Crossplane.ImageCache.ShouldPreloadProviders())
 	hasCrossplane := cfg.Crossplane.ImageCache == nil || cfg.Crossplane.ImageCache.ShouldPreloadCrossplane()
 	hasAdditional := cfg.Crossplane.ImageCache != nil && len(cfg.Crossplane.ImageCache.AdditionalImages) > 0
 
-	return hasProviders || hasCrossplane || hasAdditional
+	if hasProviders || hasCrossplane || hasAdditional {
+		return true
+	}
+
+	// Even with nothing to preload, show the phase when user explicitly enabled
+	// image cache so the UI reflects their config (phase will no-op quickly)
+	if cfg.Crossplane.ImageCache != nil {
+		return true
+	}
+
+	return false
 }
 
 func runUp(cmd *cobra.Command, args []string) error {

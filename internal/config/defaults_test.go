@@ -38,6 +38,17 @@ func TestDefaultConfigWithComments(t *testing.T) {
 		t.Error("Missing comment for crossplane.version")
 	}
 
+	// Ensure image cache / preload config is present (preloadProviders, preloadCrossplane)
+	if !strings.Contains(output, "imageCache") {
+		t.Error("Missing crossplane.imageCache in default config (preload images configuration)")
+	}
+	if !strings.Contains(output, "preloadProviders") {
+		t.Error("Missing preloadProviders in default config")
+	}
+	if !strings.Contains(output, "preloadCrossplane") {
+		t.Error("Missing preloadCrossplane in default config")
+	}
+
 	// Verify it matches DefaultConfig() when parsed
 	defaultCfg := DefaultConfig()
 	if cfg.Cluster.Name != defaultCfg.Cluster.Name {

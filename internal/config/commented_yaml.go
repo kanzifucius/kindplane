@@ -151,6 +151,41 @@ func buildSliceNode(val reflect.Value, typ reflect.Type) (*yaml.Node, error) {
 	return node, nil
 }
 
+// compareMapKeys compares two map key values for sorting. Numeric types (ints, uints, floats)
+// are compared numerically; all other types are compared by string representation.
+func compareMapKeys(ki, kj reflect.Value) bool {
+	ti, tj := ki.Kind(), kj.Kind()
+	if isNumericKind(ti) && isNumericKind(tj) {
+		return keyToFloat64(ki) < keyToFloat64(kj)
+	}
+	si, sj := fmt.Sprintf("%v", ki.Interface()), fmt.Sprintf("%v", kj.Interface())
+	return si < sj
+}
+
+func isNumericKind(k reflect.Kind) bool {
+	switch k {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
+		reflect.Float32, reflect.Float64:
+		return true
+	default:
+		return false
+	}
+}
+
+func keyToFloat64(v reflect.Value) float64 {
+	switch v.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return float64(v.Int())
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return float64(v.Uint())
+	case reflect.Float32, reflect.Float64:
+		return v.Float()
+	default:
+		return 0
+	}
+}
+
 // buildMapNode builds a mapping node from a map
 func buildMapNode(val reflect.Value, typ reflect.Type) (*yaml.Node, error) {
 	node := &yaml.Node{
@@ -161,7 +196,7 @@ func buildMapNode(val reflect.Value, typ reflect.Type) (*yaml.Node, error) {
 
 	keys := val.MapKeys()
 	sort.Slice(keys, func(i, j int) bool {
-		return fmt.Sprintf("%v", keys[i].Interface()) < fmt.Sprintf("%v", keys[j].Interface())
+		return compareMapKeys(keys[i], keys[j])
 	})
 
 	for _, k := range keys {

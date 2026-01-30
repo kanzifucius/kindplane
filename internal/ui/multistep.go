@@ -72,12 +72,13 @@ type multiStepModel struct {
 	updatesClosed bool          // Track if updates channel is closed
 }
 
-// Message types for the multi-step model
 type (
-	stepUpdateMsg    struct{ update StepUpdate }
+	stepUpdateMsg struct {
+		update StepUpdate
+	}
+	workPendingMsg   struct{}
 	workCompletedMsg struct{}
 	updatesClosedMsg struct{}
-	workPendingMsg   struct{}
 )
 
 func (m multiStepModel) Init() tea.Cmd {
@@ -184,10 +185,20 @@ func (m multiStepModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m multiStepModel) startWork() tea.Cmd {
 	return func() tea.Msg {
 		go func() {
-			err := m.fn(m.state.Ctx, m.updates, m.doneCh)
-			close(m.doneCh) // Signal loggers to stop sending before we close updates
-			close(m.updates)
-			m.workDone <- err
+			var err error
+			defer func() {
+				if p := recover(); p != nil {
+					if e, ok := p.(error); ok {
+						err = e
+					} else {
+						err = fmt.Errorf("panic: %v", p)
+					}
+				}
+				close(m.doneCh) // Signal loggers to stop sending before we close updates
+				close(m.updates)
+				m.workDone <- err
+			}()
+			err = m.fn(m.state.Ctx, m.updates, m.doneCh)
 		}()
 		return nil
 	}
@@ -340,10 +351,20 @@ func runMultiStepNonTTY(parentCtx context.Context, title string, fn func(ctx con
 	// Start work in background
 	workDone := make(chan error, 1)
 	go func() {
-		err := fn(ctx, updates, done)
-		close(done)
-		close(updates)
-		workDone <- err
+		var err error
+		defer func() {
+			if p := recover(); p != nil {
+				if e, ok := p.(error); ok {
+					err = fmt.Errorf("panic in multi-step work: %w", e)
+				} else {
+					err = fmt.Errorf("panic in multi-step work: %v", p)
+				}
+			}
+			close(done)
+			close(updates)
+			workDone <- err
+		}()
+		err = fn(ctx, updates, done)
 	}()
 
 	// Process updates

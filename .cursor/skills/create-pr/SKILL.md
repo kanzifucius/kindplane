@@ -43,9 +43,19 @@ Analyse the current branch, check for uncommitted changes, commit if needed usin
    - Determine the default branch (check `git remote show origin` or try `main` first, then `master`)
 
 4. **Check if PR already exists**:
-   - Run `gh pr list --head <branch-name>` to check if a PR already exists for this branch
-   - If a PR exists, inform the user and return the existing PR URL; do not push or create a new PR
+   - Run `gh pr list --head <branch-name>` to check if a PR already exists for this branch (use the same `<branch-name>` from step 3 throughout this step)
    - If no PR exists, proceed to step 5
+   - If a PR exists:
+     - **Check for unpushed commits** on the current branch: run `git rev-list --count origin/<branch-name>..HEAD` (if the command fails because `origin/<branch-name>` does not exist, treat as zero unpushed commits)
+     - If the count is **zero**: inform the user and return the existing PR URL; do not push or create a new PR
+     - If the count is **greater than zero** (unpushed commits exist):
+       - Inform the user that a PR already exists for this branch but there are unpushed commits that would update it
+       - **Prompt the user**: "There are unpushed commits on <branch-name>. Push to update the existing PR? (yes/no)"
+       - If the user **accepts**: run `git push origin <branch-name>`. Do not assume success:
+         - **If the push succeeds**: return the existing PR URL (as in the decline case below) and continue to the report (step 10)
+         - **If the push fails** (e.g. merge conflicts, network or permission errors): inform the user of the error; provide the git error output and any instructions to resolve it (e.g. rebase, force-push policy, or credential/network checks). Still return the existing PR URL and note that the push must be resolved manually before the PR can be updated; then continue to the report (step 10)
+       - If the user **declines**: do not push; return the existing PR URL and note that the PR does not yet include the unpushed commits
+       - Only after the user has either consented (and push attempted) or declined, return the existing PR URL and continue to the report (step 10)
 
 5. **Check if branch is pushed**:
    - Run `git status` to check if the branch is ahead of origin
@@ -141,7 +151,7 @@ Analyse the current branch, check for uncommitted changes, commit if needed usin
 - The PR description should be comprehensive but concise
 - If multiple commits exist, the PR should reflect the overall change, not just the latest commit
 - Check for any linting or test failures before creating the PR
-- Always check if a PR already exists for the branch before creating a new one
+- Always check if a PR already exists for the branch before creating a new one; when a PR exists and there are unpushed commits (`git rev-list --count origin/<branch-name>..HEAD` > 0), prompt to push so the user can update the existing PR before returning its URL
 - When using `gh` CLI, create the title and body files explicitly using the write tool (e.g. `/tmp/pr-title.txt` and `/tmp/pr-body.md`) before running the command; use `--title-file` and `--body-file` so the title and body are not interpolated into the shell
 - If TLS/certificate errors occur with `gh pr create`, use the run tool with `required_permissions: ['all']` for that command only (Cursor’s sandbox bypass). Use sparingly; it disables sandbox isolation for that run.
 - Always clean up temporary files (`/tmp/pr-title.txt` and `/tmp/pr-body.md`) after PR creation (success or failure)

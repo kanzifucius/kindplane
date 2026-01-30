@@ -11,10 +11,11 @@ import (
 // KindLogger implements kind's log.Logger interface and sends step updates via channel.
 // If done is non-nil, sends are guarded with a select so that no send occurs after done is closed (avoids panic on closed channel).
 type KindLogger struct {
-	mu      sync.Mutex
-	updates chan<- StepUpdate
-	done    <-chan struct{} // when closed, logger stops sending (optional); set to nil under mu once observed closed
-	level   log.Level
+	mu         sync.Mutex
+	updates    chan<- StepUpdate
+	done       <-chan struct{} // when closed, logger stops sending (optional)
+	doneClosed bool            // true once done was observed closed; protected by mu
+	level      log.Level
 }
 
 // NewKindLogger creates a new Logger that sends updates to the provided channel.
@@ -28,12 +29,17 @@ func NewKindLogger(updates chan<- StepUpdate, done <-chan struct{}) *KindLogger 
 }
 
 // sendUpdate sends an update without panicking if the channel was closed (when done is used).
-// Uses mu to guard l.done: we read done into a local under lock, then select on that local so we never race with l.done being set to nil. Once we observe done closed we set l.done = nil under lock so future sends stop selecting on it.
+// Uses mu to guard l.done and l.doneClosed: we read both into locals under lock. If doneClosed is true we drop.
+// If done is nil we send unconditionally. Otherwise we select between send and <-done; if done fires we set doneClosed = true under mu.
 func (l *KindLogger) sendUpdate(u StepUpdate) {
 	l.mu.Lock()
 	doneCh := l.done
+	doneClosed := l.doneClosed
 	l.mu.Unlock()
 
+	if doneClosed {
+		return
+	}
 	if doneCh == nil {
 		l.updates <- u
 		return
@@ -42,7 +48,7 @@ func (l *KindLogger) sendUpdate(u StepUpdate) {
 	case l.updates <- u:
 	case <-doneCh:
 		l.mu.Lock()
-		l.done = nil
+		l.doneClosed = true
 		l.mu.Unlock()
 	}
 }
@@ -256,9 +262,7 @@ func NewKindDashboardLogger(updateFn func(step string)) *KindDashboardLogger {
 
 // Warn implements log.Logger
 func (l *KindDashboardLogger) Warn(message string) {
-	if l.updateFn != nil {
-		l.updateFn(fmt.Sprintf("Warning: %s", message))
-	}
+	l.updateFn(fmt.Sprintf("Warning: %s", message))
 }
 
 // Warnf implements log.Logger
@@ -268,9 +272,7 @@ func (l *KindDashboardLogger) Warnf(format string, args ...interface{}) {
 
 // Error implements log.Logger
 func (l *KindDashboardLogger) Error(message string) {
-	if l.updateFn != nil {
-		l.updateFn(fmt.Sprintf("Error: %s", message))
-	}
+	l.updateFn(fmt.Sprintf("Error: %s", message))
 }
 
 // Errorf implements log.Logger

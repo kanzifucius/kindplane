@@ -94,7 +94,10 @@ func getImageArchitecture(ctx context.Context, imageName string) (*imageArchInfo
 // pullImageForPlatform pulls an image for a specific platform
 func pullImageForPlatform(ctx context.Context, imageName, platform string) error {
 	cmd := exec.CommandContext(ctx, "docker", "pull", "--platform", platform, imageName)
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("pulling image %s for platform %s: %w", imageName, platform, err)
+	}
+	return nil
 }
 
 // getTargetPlatform returns the platform string for pulling images (e.g., "linux/amd64")
@@ -129,9 +132,12 @@ func (r *cmdReader) Close() error {
 	errClose := r.ReadCloser.Close()
 	errWait := r.cmd.Wait()
 	if errClose != nil {
-		return errClose
+		return fmt.Errorf("closing ReadCloser: %w", errClose)
 	}
-	return errWait
+	if errWait != nil {
+		return fmt.Errorf("waiting for cmd: %w", errWait)
+	}
+	return nil
 }
 
 // PullImages pulls Docker images from remote registries
@@ -217,7 +223,7 @@ func PreloadImages(ctx context.Context, clusterName string, cfg *config.Config, 
 		loaded, loadErr = pushImagesToRegistry(ctx, localImages, registryHost, logFn)
 	} else {
 		// Direct mode: Load into Kind nodes
-		loaded, loadErr = loadImagesIntoNodes(ctx, clusterName, localImages, logFn)
+		loaded, loadErr = loadImagesIntoNodes(ctx, clusterName, nodeArch, localImages, logFn)
 	}
 
 	result.LoadedCount = loaded
@@ -433,7 +439,7 @@ func retagForRegistry(imageName, registryHost string) string {
 }
 
 // loadImagesIntoNodes loads images directly into Kind nodes using Kind SDK
-func loadImagesIntoNodes(ctx context.Context, clusterName string, images []string, logFn func(string)) (int, error) {
+func loadImagesIntoNodes(ctx context.Context, clusterName string, nodeArch string, images []string, logFn func(string)) (int, error) {
 	// Get Kind provider
 	provider := cluster.NewProvider()
 
@@ -464,7 +470,7 @@ func loadImagesIntoNodes(ctx context.Context, clusterName string, images []strin
 
 		// For macOS with Docker Desktop, we need to handle each node separately
 		// and create a fresh stream for each node
-		allNodesSuccess := true
+		var failedNodes map[string]error // populated only in legacy import fallback
 
 		// Use a temporary file to transfer the image to avoid pipe issues
 		// This is a workaround for some environments where piping directly to ctr fails
@@ -500,7 +506,7 @@ func loadImagesIntoNodes(ctx context.Context, clusterName string, images []strin
 		// By removing 'index.json' and 'oci-layout', we force 'ctr' (and 'kind load') to fall back
 		// to using 'manifest.json' (Docker V2 format), which correctly points to the single-arch
 		// blobs that are actually present in the tarball.
-		if runtime.GOARCH == "arm64" {
+		if nodeArch == "arm64" {
 			// Create a temporary directory for repackaging
 			repackDir, err := os.MkdirTemp("", "kind-repack-*")
 			if err == nil {
@@ -543,7 +549,7 @@ func loadImagesIntoNodes(ctx context.Context, clusterName string, images []strin
 
 			// Fallback: Manually copy and import into each node
 			// This works around issues where `kind load` or streaming fails
-			allNodesSuccess = true // assume success unless one node fails
+			failedNodes = make(map[string]error)
 
 			for _, n := range nodes {
 				// 1. Copy file to node container
@@ -556,8 +562,9 @@ func loadImagesIntoNodes(ctx context.Context, clusterName string, images []strin
 				logFn(fmt.Sprintf("  Copying to %s:%s...", containerName, targetPath))
 				cpCmd := exec.CommandContext(ctx, "docker", "cp", tmpFileName, fmt.Sprintf("%s:%s", containerName, targetPath))
 				if out, err := cpCmd.CombinedOutput(); err != nil {
-					logFn(fmt.Sprintf("  ✗ Failed to copy to node %s: %v (%s)", containerName, err, strings.TrimSpace(string(out))))
-					allNodesSuccess = false
+					nodeErr := fmt.Errorf("copy failed: %w (%s)", err, strings.TrimSpace(string(out)))
+					failedNodes[containerName] = nodeErr
+					logFn(fmt.Sprintf("  ✗ Failed to copy to node %s: %v", containerName, nodeErr))
 					continue
 				}
 
@@ -574,9 +581,10 @@ func loadImagesIntoNodes(ctx context.Context, clusterName string, images []strin
 					// Retry without --no-unpack
 					importCmd = exec.CommandContext(ctx, "docker", "exec", containerName, "ctr", "-n", "k8s.io", "images", "import", targetPath)
 					if out2, err2 := importCmd.CombinedOutput(); err2 != nil {
-						logFn(fmt.Sprintf("  ✗ Failed to import in node %s: %v\nOutput 1: %s\nOutput 2: %s",
-							containerName, err2, strings.TrimSpace(string(out)), strings.TrimSpace(string(out2))))
-						allNodesSuccess = false
+						nodeErr := fmt.Errorf("import failed: %w (output1: %s; output2: %s)",
+							err2, strings.TrimSpace(string(out)), strings.TrimSpace(string(out2)))
+						failedNodes[containerName] = nodeErr
+						logFn(fmt.Sprintf("  ✗ Failed to import in node %s: %v", containerName, nodeErr))
 					}
 				}
 
@@ -585,11 +593,20 @@ func loadImagesIntoNodes(ctx context.Context, clusterName string, images []strin
 					logFn(fmt.Sprintf("  Warning: failed to remove temp file %s in %s: %v", targetPath, containerName, rmErr))
 				}
 			}
+
+			if len(failedNodes) > 0 {
+				logFn(fmt.Sprintf("  ✗ Image not loaded on %d node(s):", len(failedNodes)))
+				for node, nodeErr := range failedNodes {
+					logFn(fmt.Sprintf("    - %s: %v", node, nodeErr))
+				}
+			}
 		}
 
 		_ = os.Remove(tmpFileName)
 
-		if allNodesSuccess {
+		// Success when standard load worked, or when legacy fallback ran with no node failures
+		legacyFailed := len(failedNodes) > 0
+		if !legacyFailed {
 			logFn("  ✓ Loaded successfully")
 			successCount++
 		}

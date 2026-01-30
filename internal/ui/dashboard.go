@@ -736,14 +736,20 @@ func (m DashboardModel) renderLogPanel(width int) string {
 	// Render box with consistent width
 	box := StyleDashboardLogBox.Width(width - 2).Render(content)
 
-	// Build title with scroll indicator
+	// Build title with scroll indicator (use wrapped/rendered line counts, not raw log entries)
+	totalWrapped := m.viewport.TotalLineCount()
+	visibleLines := m.viewport.VisibleLineCount()
 	title := "Logs"
-	if len(m.logLines) > 0 && !m.viewport.AtBottom() {
-		// Show indicator that there are more logs below
-		title = fmt.Sprintf("Logs [%d/%d]", m.viewport.YOffset+DashboardLogBuffer, len(m.logLines))
-	} else if !m.viewport.AtTop() && len(m.logLines) > DashboardLogBuffer {
-		// Show total count when at bottom but there's history above
-		title = fmt.Sprintf("Logs [%d lines]", len(m.logLines))
+	if totalWrapped > 0 && !m.viewport.AtBottom() {
+		// Current position = last visible line index (capped by total wrapped lines)
+		currentLine := m.viewport.YOffset + visibleLines
+		if currentLine > totalWrapped {
+			currentLine = totalWrapped
+		}
+		title = fmt.Sprintf("Logs [%d/%d]", currentLine, totalWrapped)
+	} else if !m.viewport.AtTop() && totalWrapped > visibleLines {
+		// Show total wrapped line count when scrolled and there's more content than fits on screen
+		title = fmt.Sprintf("Logs [%d lines]", totalWrapped)
 	}
 
 	// Add title to border
