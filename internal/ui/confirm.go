@@ -58,8 +58,6 @@ type confirmModel struct {
 	state       *CancellableState
 }
 
-// confirmResultMsg is sent when the user makes a choice
-
 // Init initializes the model
 func (m confirmModel) Init() tea.Cmd {
 	return nil

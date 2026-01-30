@@ -336,28 +336,28 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Log viewport scrolling (only when verbose mode is active)
 		case "up", "k":
 			if m.verbose {
-				m.viewport.LineUp(1)
+				m.viewport.ScrollUp(1)
 				m.logAutoScroll = m.viewport.AtBottom()
 				return m, nil
 			}
 
 		case "down", "j":
 			if m.verbose {
-				m.viewport.LineDown(1)
+				m.viewport.ScrollDown(1)
 				m.logAutoScroll = m.viewport.AtBottom()
 				return m, nil
 			}
 
 		case "pgup", "ctrl+u":
 			if m.verbose {
-				m.viewport.HalfViewUp()
+				m.viewport.HalfPageUp()
 				m.logAutoScroll = m.viewport.AtBottom()
 				return m, nil
 			}
 
 		case "pgdown", "ctrl+d":
 			if m.verbose {
-				m.viewport.HalfViewDown()
+				m.viewport.HalfPageDown()
 				m.logAutoScroll = m.viewport.AtBottom()
 				return m, nil
 			}

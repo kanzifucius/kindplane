@@ -22,7 +22,7 @@ const (
 func main() {
 	r := &jsonschema.Reflector{
 		AllowAdditionalProperties: false,
-		ExpandedStruct:             true,
+		ExpandedStruct:            true,
 		FieldNameTag:              "yaml",
 		BaseSchemaID:              jsonschema.ID(schemaID),
 		LookupComment:             lookupConfigComment,

@@ -2,6 +2,7 @@ package chart
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -88,7 +89,7 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 	if !uninstallForce {
 		confirm, err := ui.ConfirmWithContext(ctx, fmt.Sprintf("Uninstall release '%s' from namespace '%s'?", releaseName, uninstallNamespace))
 		if err != nil {
-			if err == ui.ErrCancelled {
+			if errors.Is(err, ui.ErrCancelled) {
 				fmt.Println(ui.Warning("Uninstall cancelled"))
 				return nil
 			}

@@ -115,12 +115,16 @@ func getHostArchitecture() string {
 	return normalizeArch(runtime.GOARCH)
 }
 
-// cmdReader wraps a ReadCloser and ensures the command is properly closed
+// cmdReader wraps a ReadCloser and ensures the command is properly closed.
+// Used by saveDockerImage for streaming load path (currently unused; kept for future use).
+//
+//nolint:unused
 type cmdReader struct {
 	io.ReadCloser
 	cmd *exec.Cmd
 }
 
+//nolint:unused
 func (r *cmdReader) Close() error {
 	errClose := r.ReadCloser.Close()
 	errWait := r.cmd.Wait()
@@ -453,7 +457,7 @@ func loadImagesIntoNodes(ctx context.Context, clusterName string, images []strin
 
 		// Check if image is already loaded in the first node
 		if _, err := nodeutils.ImageID(nodes[0], img); err == nil {
-			logFn(fmt.Sprintf("  ✓ Already present"))
+			logFn("  ✓ Already present")
 			successCount++
 			continue
 		}
@@ -474,15 +478,15 @@ func loadImagesIntoNodes(ctx context.Context, clusterName string, images []strin
 		tmpFileName := tmpFile.Name()
 
 		// 2. Save image to the temporary file
-		logFn(fmt.Sprintf("  Exporting image to temp file..."))
+		logFn("  Exporting image to temp file...")
 		saveCmd := exec.CommandContext(ctx, "docker", "save", "-o", tmpFileName, img)
 		if out, err := saveCmd.CombinedOutput(); err != nil {
 			logFn(fmt.Sprintf("  ✗ Failed to save image: %v (%s)", err, strings.TrimSpace(string(out))))
-			tmpFile.Close()
+			_ = tmpFile.Close()
 			_ = os.Remove(tmpFileName)
 			continue
 		}
-		tmpFile.Close() // Close so we can read it again
+		_ = tmpFile.Close() // Close so we can read it again
 
 		// WORKAROUND: Remove OCI index files from the tarball if present.
 		// Docker on macOS (ARM64) sometimes exports a tarball containing both OCI layout/index.json AND
@@ -506,8 +510,8 @@ func loadImagesIntoNodes(ctx context.Context, clusterName string, images []strin
 					// Check if index.json exists
 					if _, err := os.Stat(fmt.Sprintf("%s/index.json", repackDir)); err == nil {
 						// Remove OCI files
-						os.Remove(fmt.Sprintf("%s/index.json", repackDir))
-						os.Remove(fmt.Sprintf("%s/oci-layout", repackDir))
+						_ = os.Remove(fmt.Sprintf("%s/index.json", repackDir))
+						_ = os.Remove(fmt.Sprintf("%s/oci-layout", repackDir))
 
 						// Repack into the temp file (overwriting it)
 						// Note: We need to recreate the file
@@ -518,7 +522,7 @@ func loadImagesIntoNodes(ctx context.Context, clusterName string, images []strin
 							if err := repackCmd.Run(); err != nil {
 								logFn(fmt.Sprintf("  Warning: Failed to repack image (continuing with original): %v", err))
 							}
-							tmpFileForRepack.Close()
+							_ = tmpFileForRepack.Close()
 						}
 					}
 				}
@@ -530,7 +534,7 @@ func loadImagesIntoNodes(ctx context.Context, clusterName string, images []strin
 		// The library implementation seems to have issues with pipes on some environments
 		// and we are already shelling out for docker commands anyway.
 
-		logFn(fmt.Sprintf("  Loading archive into cluster nodes..."))
+		logFn("  Loading archive into cluster nodes...")
 		loadCmd := exec.CommandContext(ctx, "kind", "load", "image-archive", tmpFileName, "--name", clusterName)
 		out, err := loadCmd.CombinedOutput()
 		_ = out // Prevent unused variable error if we don't use it in success path
@@ -586,7 +590,7 @@ func loadImagesIntoNodes(ctx context.Context, clusterName string, images []strin
 		_ = os.Remove(tmpFileName)
 
 		if allNodesSuccess {
-			logFn(fmt.Sprintf("  ✓ Loaded successfully"))
+			logFn("  ✓ Loaded successfully")
 			successCount++
 		}
 	}
@@ -599,7 +603,10 @@ func loadImagesIntoNodes(ctx context.Context, clusterName string, images []strin
 	return 0, fmt.Errorf("failed to load any images into Kind nodes")
 }
 
-// saveDockerImage exports a Docker image as a tar stream
+// saveDockerImage exports a Docker image as a tar stream.
+// Reserved for streaming load path (currently unused).
+//
+//nolint:unused
 func saveDockerImage(ctx context.Context, imageName string) (io.ReadCloser, error) {
 	cmd := exec.CommandContext(ctx, "docker", "save", imageName)
 	stdout, err := cmd.StdoutPipe()
