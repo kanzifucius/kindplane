@@ -54,7 +54,7 @@ err := ui.RunProgressWithContext(ctx, "Processing", items, fn,
 ### Multi-step Operations
 
 ```go
-err := ui.RunMultiStep(ctx, "Creating cluster", func(ctx context.Context, updates chan<- ui.StepUpdate) error {
+err := ui.RunMultiStep(ctx, "Creating cluster", func(ctx context.Context, updates chan<- ui.StepUpdate, done <-chan struct{}) error {
     updates <- ui.StepUpdate{Step: "Creating network", Done: false}
     if err := createNetwork(ctx); err != nil {
         return err

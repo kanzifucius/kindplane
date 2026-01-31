@@ -123,6 +123,57 @@ When you enable the local registry, kindplane:
 
 5. **Creates a ConfigMap** - Adds `local-registry-hosting` ConfigMap to `kube-public` namespace for discovery
 
+## Integration with Image Caching
+
+When both local registry and image caching are enabled, kindplane automatically optimizes your workflow:
+
+1. **Checks for images** in your local Docker daemon
+2. **Tags and pushes them** to the local registry (`localhost:5001`)
+3. **Kubernetes pulls** from the local registry (fast, cached)
+
+This provides the fastest bootstrap experience:
+
+- No remote registry pulls for cached images
+- Registry acts as shared cache for all nodes
+- Images persist if registry is in persistent mode
+
+### Example Workflow
+
+```yaml
+# kindplane.yaml
+cluster:
+  name: kindplane-dev
+  registry:
+    enabled: true
+    persistent: true
+
+crossplane:
+  version: "1.15.0"
+  # imageCache is enabled by default
+```
+
+```bash
+# Pre-pull images once
+docker pull crossplane/crossplane:v1.15.0
+docker pull xpkg.upbound.io/crossplane-contrib/provider-kubernetes-controller:v0.12.0
+
+# Bootstrap - images are automatically pushed to local registry
+kindplane up
+
+# Verify images in registry
+curl http://localhost:5001/v2/_catalog
+# {"repositories":["crossplane/crossplane","crossplane-contrib/provider-kubernetes-controller"]}
+
+# Fast iterations - images stay in persistent registry
+kindplane down
+kindplane up  # Very fast! No pulls needed
+```
+
+!!! tip "Performance Boost"
+    Combining local registry with image caching provides:
+    - **First bootstrap**: ~30-60s faster (vs. remote pulls)
+    - **Subsequent bootstraps**: ~60-120s faster (persistent registry cache)
+
 ## Accessing from Pods
 
 There's an important distinction between host access and in-cluster access:

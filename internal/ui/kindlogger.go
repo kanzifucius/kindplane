@@ -1,80 +1,116 @@
-package kind
+package ui
 
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"sigs.k8s.io/kind/pkg/log"
-
-	"github.com/kanzi/kindplane/internal/ui"
 )
 
-// Logger implements kind's log.Logger interface and sends step updates via channel
-type Logger struct {
-	updates chan<- ui.StepUpdate
+// KindLogger implements kind's log.Logger interface and sends step updates via channel.
+// If done is non-nil, sends are guarded with a select so that no send occurs after done is closed (avoids panic on closed channel).
+type KindLogger struct {
+	mu      sync.Mutex
+	updates chan<- StepUpdate
+	done    <-chan struct{} // when closed, logger stops sending (optional); set to nil under mu once observed closed
+	closed  bool            // true once done was observed closed; protected by mu; no sends after this
 	level   log.Level
 }
 
-// NewLogger creates a new Logger that sends updates to the provided channel
-func NewLogger(updates chan<- ui.StepUpdate) *Logger {
-	return &Logger{
+// NewKindLogger creates a new Logger that sends updates to the provided channel.
+// If done is non-nil, it must be closed by the receiver when no more updates are expected; the logger will then avoid sending to a closed channel.
+func NewKindLogger(updates chan<- StepUpdate, done <-chan struct{}) *KindLogger {
+	return &KindLogger{
 		updates: updates,
+		done:    done,
 		level:   1, // Capture V(0) and V(1) messages to get all progress updates
 	}
 }
 
-// Warn implements log.Logger
-func (l *Logger) Warn(message string) {
-	// Warnings are typically not progress steps, but we can send them
-	l.updates <- ui.StepUpdate{
-		Step:    fmt.Sprintf("Warning: %s", message),
-		Done:    true,
-		Success: false,
+// sendUpdate sends an update without panicking if the channel was closed (when done is used).
+// Uses mu to guard l.done and l.closed: we read both into locals under lock. If closed is true we drop.
+// If done is nil we re-check closed under lock and only then send; otherwise we select between send and <-done; if done fires we set l.done = nil and l.closed = true under mu.
+func (l *KindLogger) sendUpdate(u StepUpdate) {
+	l.mu.Lock()
+	doneCh := l.done
+	closed := l.closed
+	l.mu.Unlock()
+
+	if closed {
+		return
+	}
+	if doneCh == nil {
+		l.mu.Lock()
+		if l.closed {
+			l.mu.Unlock()
+			return
+		}
+		l.mu.Unlock()
+		l.updates <- u
+		return
+	}
+	select {
+	case l.updates <- u:
+	case <-doneCh:
+		l.mu.Lock()
+		l.done = nil
+		l.closed = true
+		l.mu.Unlock()
 	}
 }
 
+// Warn implements log.Logger
+func (l *KindLogger) Warn(message string) {
+	l.sendUpdate(StepUpdate{
+		Step:    fmt.Sprintf("Warning: %s", message),
+		Done:    true,
+		Success: false,
+	})
+}
+
 // Warnf implements log.Logger
-func (l *Logger) Warnf(format string, args ...interface{}) {
+func (l *KindLogger) Warnf(format string, args ...interface{}) {
 	l.Warn(fmt.Sprintf(format, args...))
 }
 
 // Error implements log.Logger
-func (l *Logger) Error(message string) {
-	l.updates <- ui.StepUpdate{
+func (l *KindLogger) Error(message string) {
+	l.sendUpdate(StepUpdate{
 		Step:    fmt.Sprintf("Error: %s", message),
 		Done:    true,
 		Success: false,
-	}
+	})
 }
 
 // Errorf implements log.Logger
-func (l *Logger) Errorf(format string, args ...interface{}) {
+func (l *KindLogger) Errorf(format string, args ...interface{}) {
 	l.Error(fmt.Sprintf(format, args...))
 }
 
 // V implements log.Logger and returns an InfoLogger for the given verbosity level
-func (l *Logger) V(level log.Level) log.InfoLogger {
-	return &infoLogger{
+func (l *KindLogger) V(level log.Level) log.InfoLogger {
+	return &kindInfoLogger{
 		logger:  l,
 		level:   level,
 		enabled: level <= l.level, // Enable V(0) and V(1) for progress updates
 	}
 }
 
-// infoLogger implements log.InfoLogger
-type infoLogger struct {
-	logger  *Logger
+// kindInfoLogger implements log.InfoLogger
+type kindInfoLogger struct {
+	logger  *KindLogger
 	level   log.Level
 	enabled bool
 }
 
 // Enabled implements log.InfoLogger
-func (i *infoLogger) Enabled() bool {
+func (i *kindInfoLogger) Enabled() bool {
 	return i.enabled
 }
 
 // Info implements log.InfoLogger
-func (i *infoLogger) Info(message string) {
+func (i *kindInfoLogger) Info(message string) {
 	if !i.enabled {
 		return
 	}
@@ -142,15 +178,15 @@ func (i *infoLogger) Info(message string) {
 	isSuccess := isDone && !strings.Contains(strings.ToLower(message), "error")
 
 	// Send update - mark as done only if it's a completion message
-	i.logger.updates <- ui.StepUpdate{
+	i.logger.sendUpdate(StepUpdate{
 		Step:    step,
 		Done:    (isDone || isFailed) && !isInProgress, // Don't mark as done if it's still in progress
 		Success: isSuccess && !isFailed,
-	}
+	})
 }
 
 // Infof implements log.InfoLogger
-func (i *infoLogger) Infof(format string, args ...interface{}) {
+func (i *kindInfoLogger) Infof(format string, args ...interface{}) {
 	if i.enabled {
 		i.Info(fmt.Sprintf(format, args...))
 	}
@@ -213,61 +249,65 @@ func parseKindMessage(message string) string {
 // Dashboard Logger (for TUI Dashboard mode)
 // -----------------------------------------------------------------------------
 
-// DashboardLogger implements kind's log.Logger interface and sends updates via callback
-type DashboardLogger struct {
+// KindDashboardLogger implements kind's log.Logger interface and sends updates via callback
+type KindDashboardLogger struct {
 	updateFn func(step string)
 	level    log.Level
 }
 
-// NewDashboardLogger creates a logger that sends updates to a callback function
-func NewDashboardLogger(updateFn func(step string)) *DashboardLogger {
-	return &DashboardLogger{
+// NewKindDashboardLogger creates a logger that sends updates to a callback function.
+// If updateFn is nil, a no-op is used so methods never panic.
+func NewKindDashboardLogger(updateFn func(step string)) *KindDashboardLogger {
+	if updateFn == nil {
+		updateFn = func(string) {}
+	}
+	return &KindDashboardLogger{
 		updateFn: updateFn,
 		level:    1,
 	}
 }
 
 // Warn implements log.Logger
-func (l *DashboardLogger) Warn(message string) {
+func (l *KindDashboardLogger) Warn(message string) {
 	l.updateFn(fmt.Sprintf("Warning: %s", message))
 }
 
 // Warnf implements log.Logger
-func (l *DashboardLogger) Warnf(format string, args ...interface{}) {
+func (l *KindDashboardLogger) Warnf(format string, args ...interface{}) {
 	l.Warn(fmt.Sprintf(format, args...))
 }
 
 // Error implements log.Logger
-func (l *DashboardLogger) Error(message string) {
+func (l *KindDashboardLogger) Error(message string) {
 	l.updateFn(fmt.Sprintf("Error: %s", message))
 }
 
 // Errorf implements log.Logger
-func (l *DashboardLogger) Errorf(format string, args ...interface{}) {
+func (l *KindDashboardLogger) Errorf(format string, args ...interface{}) {
 	l.Error(fmt.Sprintf(format, args...))
 }
 
 // V implements log.Logger
-func (l *DashboardLogger) V(level log.Level) log.InfoLogger {
-	return &dashboardInfoLogger{
+func (l *KindDashboardLogger) V(level log.Level) log.InfoLogger {
+	return &kindDashboardInfoLogger{
 		logger:  l,
 		enabled: level <= l.level,
 	}
 }
 
-// dashboardInfoLogger implements log.InfoLogger for DashboardLogger
-type dashboardInfoLogger struct {
-	logger  *DashboardLogger
+// kindDashboardInfoLogger implements log.InfoLogger for KindDashboardLogger
+type kindDashboardInfoLogger struct {
+	logger  *KindDashboardLogger
 	enabled bool
 }
 
 // Enabled implements log.InfoLogger
-func (i *dashboardInfoLogger) Enabled() bool {
+func (i *kindDashboardInfoLogger) Enabled() bool {
 	return i.enabled
 }
 
 // Info implements log.InfoLogger
-func (i *dashboardInfoLogger) Info(message string) {
+func (i *kindDashboardInfoLogger) Info(message string) {
 	if !i.enabled {
 		return
 	}
@@ -281,7 +321,7 @@ func (i *dashboardInfoLogger) Info(message string) {
 }
 
 // Infof implements log.InfoLogger
-func (i *dashboardInfoLogger) Infof(format string, args ...interface{}) {
+func (i *kindDashboardInfoLogger) Infof(format string, args ...interface{}) {
 	if i.enabled {
 		i.Info(fmt.Sprintf(format, args...))
 	}

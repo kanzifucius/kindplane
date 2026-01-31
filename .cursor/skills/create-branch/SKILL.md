@@ -1,3 +1,9 @@
+---
+name: create-branch
+description: Create Branch and Commit Changes
+disable-model-invocation: true
+---
+
 # Create Branch and Commit Changes
 
 Analyse the uncommitted changes in the current working directory and create a well-named branch with an appropriate commit.

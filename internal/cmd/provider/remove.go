@@ -2,10 +2,10 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
 
 	"github.com/kanzi/kindplane/internal/config"
@@ -86,11 +86,12 @@ func runRemove(cmd *cobra.Command, args []string) error {
 
 	// Confirm unless --force
 	if !removeForce {
-		confirm := false
-		prompt := &survey.Confirm{
-			Message: fmt.Sprintf("Remove provider '%s'? Managed resources may become orphaned.", providerName),
-		}
-		if err := survey.AskOne(prompt, &confirm); err != nil {
+		confirm, err := ui.ConfirmWithContext(ctx, fmt.Sprintf("Remove provider '%s'? Managed resources may become orphaned.", providerName))
+		if err != nil {
+			if errors.Is(err, ui.ErrCancelled) {
+				fmt.Println(ui.Warning("Removal cancelled"))
+				return nil
+			}
 			fmt.Println(ui.Error("Prompt failed: %v", err))
 			return err
 		}

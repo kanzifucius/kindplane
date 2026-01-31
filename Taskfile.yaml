@@ -1,4 +1,4 @@
-version: '3'
+version: "3"
 
 vars:
   BINARY_NAME: kindplane
@@ -39,10 +39,17 @@ tasks:
       - GOOS=linux GOARCH=arm64 go build -ldflags "{{.LDFLAGS}}" -o bin/{{.BINARY_NAME}}-linux-arm64 ./cmd/kindplane
       - GOOS=windows GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o bin/{{.BINARY_NAME}}-windows-amd64.exe ./cmd/kindplane
 
-  build:install:
-    desc: Install locally to $GOPATH/bin
+  install:
+    desc: Install locally to $GOPATH/bin (alias for build:install)
     cmds:
       - go install -ldflags "{{.LDFLAGS}}" ./cmd/kindplane
+      - echo "✓ Installed {{.BINARY_NAME}} to $${GOPATH:-$$HOME/go}/bin/{{.BINARY_NAME}}"
+
+  uninstall:
+    desc: Remove binary from $GOPATH/bin (same location as install)
+    cmds:
+      - rm -f $${GOPATH:-$$HOME/go}/bin/{{.BINARY_NAME}}
+      - echo "✓ Uninstalled {{.BINARY_NAME}}"
 
   build:clean:
     desc: Clean build artifacts
@@ -148,11 +155,12 @@ tasks:
   # =============================================================================
 
   check:
-    desc: Run all checks (fmt, lint, test)
+    desc: Run all checks (fmt, lint, test, schema)
     cmds:
       - task: fmt
       - task: lint
       - task: test
+      - task: schema:generate
 
   # =============================================================================
   # Release tasks
@@ -281,16 +289,33 @@ tasks:
       - go install golang.org/x/tools/cmd/goimports@latest
       - go install github.com/goreleaser/goreleaser@latest
 
+  hooks:install:
+    desc: Install Git pre-commit hook
+    cmds:
+      - |
+        if [ ! -f scripts/pre-commit ]; then
+          echo "Error: scripts/pre-commit not found"
+          exit 1
+        fi
+        cp scripts/pre-commit .git/hooks/pre-commit
+        chmod +x .git/hooks/pre-commit
+        echo "✓ Pre-commit hook installed at .git/hooks/pre-commit"
+
   # =============================================================================
   # Documentation tasks
   # =============================================================================
 
   docs:generate:
     desc: Generate CLI reference documentation from Cobra commands
-    deps: [build]
     cmds:
       - go run ./cmd/gendocs
       - echo "CLI documentation generated in docs/cli-reference/"
+
+  schema:generate:
+    desc: Generate kindplane.schema.json from config package types
+    cmds:
+      - go run ./cmd/genschema
+      - echo "Schema written to kindplane.schema.json"
 
   docs:serve:
     desc: Serve documentation locally with hot reload (Docker)
@@ -351,36 +376,61 @@ tasks:
   vhs:all:
     desc: Generate all VHS recordings in correct dependency order
     deps: [build]
+    env:
+      PATH:
+        sh: echo "bin:$PATH"
     cmds:
       - mkdir -p docs/assets/vhs
       # Standalone commands (no prerequisites)
-      - PATH=bin:$PATH vhs vhs/doctor.tape
-      - PATH=bin:$PATH vhs vhs/init.tape
-      - PATH=bin:$PATH vhs vhs/up.tape
-      - PATH=bin:$PATH vhs vhs/cluster-list.tape
+      - vhs vhs/doctor.tape
+      - vhs vhs/init.tape
+      - vhs vhs/up.tape
+      - vhs vhs/cluster-list.tape
       # Commands requiring config file (init runs first in tape)
-      - PATH=bin:$PATH vhs vhs/validate.tape
-      - PATH=bin:$PATH vhs vhs/status.tape
-      - PATH=bin:$PATH vhs vhs/config-show.tape
-      - PATH=bin:$PATH vhs vhs/config-diff.tape
+      - vhs vhs/validate.tape
+      - vhs vhs/status.tape
+      - vhs vhs/config-show.tape
+      - vhs vhs/config-diff.tape
       # Commands requiring cluster (assumes cluster exists)
-      - PATH=bin:$PATH vhs vhs/logs.tape
-      - PATH=bin:$PATH vhs vhs/diagnostics.tape
-      - PATH=bin:$PATH vhs vhs/chart-list.tape
-      - PATH=bin:$PATH vhs vhs/provider-list.tape
-      - PATH=bin:$PATH vhs vhs/credentials-list.tape
-      - PATH=bin:$PATH vhs vhs/down.tape
+      - vhs vhs/logs.tape
+      - vhs vhs/diagnostics.tape
+      - vhs vhs/chart-list.tape
+      - vhs vhs/provider-list.tape
+      - vhs vhs/credentials-list.tape
+      - vhs vhs/down.tape
 
   vhs:single:
     desc: "Generate single VHS recording (usage: task vhs:single TAPE=init)"
     requires:
       vars: [TAPE]
     deps: [build]
+    env:
+      PATH:
+        sh: echo "bin:$PATH"
     cmds:
       - mkdir -p docs/assets/vhs
-      - PATH=bin:$PATH vhs "vhs/{{.TAPE}}.tape"
+      - vhs "vhs/{{.TAPE}}.tape"
 
   vhs:clean:
     desc: Remove generated VHS recordings
     cmds:
       - rm -rf docs/assets/vhs/*.gif
+
+  dev:run-smoke-up:
+    desc: "Run smoke test for up command"
+    deps: [build]
+    dir: bin
+    cmds:
+      - ./{{.BINARY_NAME}} down --force
+      - ./{{.BINARY_NAME}} up
+      - ./{{.BINARY_NAME}} status
+      - ./{{.BINARY_NAME}} down --force
+  dev:pre-commit:
+    desc: "Run pre-commit checks"
+    deps: [lint, test]
+    cmds:
+      - task: lint
+      - task: test
+      - task: docs:generate
+      - task: schema:generate
+      - task: vhs:all

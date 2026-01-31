@@ -168,9 +168,9 @@ jobs:
       - name: Build binaries
         run: |
           VERSION=${{ needs.calculate-version.outputs.version }}
-          COMMIT=${{ github.sha }}
+          COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "none")
           BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          LDFLAGS="-s -w -X github.com/kanzi/kindplane/internal/cmd.version=${VERSION} -X github.com/kanzi/kindplane/internal/cmd.commit=${COMMIT} -X github.com/kanzi/kindplane/internal/cmd.buildTime=${BUILD_TIME}"
+          LDFLAGS="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT} -X main.BuildTime=${BUILD_TIME}"
           
           # Linux AMD64
           GOOS=linux GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o dist/kindplane-linux-amd64 ./cmd/kindplane

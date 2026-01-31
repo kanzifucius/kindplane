@@ -2,10 +2,10 @@ package chart
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
 
 	"github.com/kanzi/kindplane/internal/config"
@@ -87,11 +87,12 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 
 	// Confirm unless --force
 	if !uninstallForce {
-		confirm := false
-		prompt := &survey.Confirm{
-			Message: fmt.Sprintf("Uninstall release '%s' from namespace '%s'?", releaseName, uninstallNamespace),
-		}
-		if err := survey.AskOne(prompt, &confirm); err != nil {
+		confirm, err := ui.ConfirmWithContext(ctx, fmt.Sprintf("Uninstall release '%s' from namespace '%s'?", releaseName, uninstallNamespace))
+		if err != nil {
+			if errors.Is(err, ui.ErrCancelled) {
+				fmt.Println(ui.Warning("Uninstall cancelled"))
+				return nil
+			}
 			fmt.Println(ui.Error("Prompt failed: %v", err))
 			return err
 		}

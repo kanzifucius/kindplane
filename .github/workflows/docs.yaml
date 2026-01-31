@@ -5,11 +5,11 @@ on:
     branches:
       - main
     paths:
-      - 'docs/**'
-      - 'mkdocs.yml'
-      - '.github/workflows/docs.yaml'
-      - 'internal/cmd/**'
-      - 'cmd/**'
+      - "docs/**"
+      - "mkdocs.yml"
+      - ".github/workflows/docs.yaml"
+      - "internal/cmd/**"
+      - "cmd/**"
   # Deploy versioned docs only after release workflow succeeds
   workflow_run:
     workflows: ["Release"]
@@ -18,19 +18,19 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: 'Action to perform'
+        description: "Action to perform"
         required: true
-        default: 'deploy'
+        default: "deploy"
         type: choice
         options:
           - deploy
           - delete
       version:
-        description: 'Version to deploy or delete (e.g., 1.0.0, latest, dev)'
+        description: "Version to deploy or delete (e.g., 1.0.0, latest, dev)"
         required: true
-        default: 'dev'
+        default: "dev"
       set_default:
-        description: 'Set this version as default (deploy only)'
+        description: "Set this version as default (deploy only)"
         required: false
         default: false
         type: boolean
@@ -49,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     # Skip workflow_run events that didn't succeed or aren't for tags
     if: |
-      github.event_name != 'workflow_run' || 
+      github.event_name != 'workflow_run' ||
       (github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v'))
     steps:
       - name: Checkout
@@ -71,16 +71,42 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: "1.25"
           cache: true
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            # Extract version from tag (e.g., v1.0.0 -> 1.0.0)
+            VERSION="${{ github.event.workflow_run.head_branch }}"
+            VERSION=${VERSION#v}
+            echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+            echo "Detected version from release: ${VERSION}"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Use manual input version
+            VERSION="${{ github.event.inputs.version }}"
+            echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+            echo "Using manual version: ${VERSION}"
+          else
+            # Default to dev for main branch pushes
+            VERSION="dev"
+            echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+            echo "Using default version: ${VERSION}"
+          fi
 
       - name: Generate CLI documentation
         run: go run ./cmd/gendocs
 
+      - name: Generate versioned schema
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          go run ./cmd/genschema --version="${VERSION}" --output=docs/kindplane.schema.json
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Cache pip
         uses: actions/cache@v4
@@ -132,7 +158,7 @@ jobs:
           VERSION="${{ github.event.inputs.version }}"
           SET_DEFAULT="${{ github.event.inputs.set_default }}"
           echo "Deploying version: $VERSION"
-          
+
           if [ "$SET_DEFAULT" = "true" ]; then
             mike deploy --push --update-aliases $VERSION latest
             mike set-default --push latest

@@ -22,6 +22,7 @@ kindplane up [flags]
 | `--rollback-on-failure` | Delete cluster if bootstrap fails |
 | `--timeout` | Timeout for bootstrap operations (default: `10m`) |
 | `--show-values` | Display merged Helm values before installation |
+| `--pull-images` | Automatically pull missing images without prompting |
 
 ## Description
 
@@ -34,15 +35,66 @@ The command performs these steps in order:
 1. **Create local registry** - Creates container registry (if enabled)
 2. **Configure trusted CAs** - Validates CA certificates (if configured)
 3. **Create Kind cluster** - Creates the cluster with configured nodes
-4. **Connect to cluster** - Establishes Kubernetes client connection
-5. **Install pre-crossplane charts** - Deploys charts with `phase: pre-crossplane`
-6. **Install Crossplane** - Deploys Crossplane using Helm
-7. **Install post-crossplane charts** - Deploys charts with `phase: post-crossplane`
-8. **Install providers** - Deploys configured Crossplane providers
-9. **Wait for providers** - Waits for all providers to be healthy
-10. **Install post-providers charts** - Deploys charts with `phase: post-providers`
-11. **Install final charts** - Deploys charts with `phase: final`
-12. **Apply compositions** - Deploys XRDs and Compositions
+4. **Pre-load images** - Loads local Docker images into cluster (if available)
+5. **Connect to cluster** - Establishes Kubernetes client connection
+6. **Install pre-crossplane charts** - Deploys charts with `phase: pre-crossplane`
+7. **Install Crossplane** - Deploys Crossplane using Helm
+8. **Install post-crossplane charts** - Deploys charts with `phase: post-crossplane`
+9. **Install providers** - Deploys configured Crossplane providers
+10. **Wait for providers** - Waits for all providers to be healthy
+11. **Install post-providers charts** - Deploys charts with `phase: post-providers`
+12. **Install final charts** - Deploys charts with `phase: final`
+13. **Apply compositions** - Deploys XRDs and Compositions
+
+## Image Pre-loading
+
+By default, kindplane checks your local Docker daemon for Crossplane and provider images and pre-loads them into the cluster. This significantly speeds up bootstrap by avoiding slow registry pulls.
+
+**How it works:**
+
+- Scans configured providers and derives their controller image names
+- Checks if images exist in your local Docker daemon
+- If no images found locally, prompts you to pull them (in TTY mode)
+- Pre-loads found images using one of two modes:
+  - **Registry mode**: Pushes to local registry (if `cluster.registry.enabled: true`)
+  - **Direct mode**: Loads directly into Kind nodes
+
+**Interactive Prompt:**
+
+When running interactively and no images are found:
+
+```text
+No local images found. The following images can be pulled for faster future bootstraps:
+
+  - crossplane/crossplane:v1.15.0
+  - xpkg.upbound.io/upbound/provider-aws:v1.1.0
+
+Pull 2 images now? [y/N]
+```
+
+Use `--pull-images` to automatically pull without prompting:
+
+```bash
+kindplane up --pull-images
+```
+
+**Benefits:**
+
+- Faster bootstrap (no network pulls for cached images)
+- Works offline once images are cached locally
+- Reduces load on remote registries
+
+**Configuration:**
+
+```yaml
+crossplane:
+  imageCache:
+    enabled: true  # Default
+    preloadProviders: true  # Default
+    preloadCrossplane: true  # Default
+```
+
+See [Image Cache Configuration](../configuration/image-cache.md) for details.
 
 ## Display Modes
 

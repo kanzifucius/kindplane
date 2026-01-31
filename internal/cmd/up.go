@@ -43,6 +43,7 @@ var (
 	upTimeout           time.Duration
 	upRollbackOnFailure bool
 	upShowValues        bool
+	upPullImages        bool
 )
 
 var upCmd = &cobra.Command{
@@ -85,6 +86,7 @@ func init() {
 	upCmd.Flags().DurationVar(&upTimeout, "timeout", 10*time.Minute, "timeout for the entire operation")
 	upCmd.Flags().BoolVar(&upRollbackOnFailure, "rollback-on-failure", false, "delete cluster if bootstrap fails")
 	upCmd.Flags().BoolVar(&upShowValues, "show-values", false, "display merged Helm values before installation")
+	upCmd.Flags().BoolVar(&upPullImages, "pull-images", false, "automatically pull missing images without prompting")
 }
 
 // bootstrapContext holds shared resources during bootstrap
@@ -100,6 +102,7 @@ const (
 	phaseRegistry       = "Create local registry"
 	phaseTrustedCAs     = "Configure trusted CAs"
 	phaseCluster        = "Create Kind cluster"
+	phaseImageCache     = "Pre-load images"
 	phaseConnect        = "Connect to cluster"
 	phasePreCrossplane  = "Install pre-crossplane charts"
 	phaseCrossplane     = "Install Crossplane"
@@ -122,6 +125,7 @@ func buildPhases() *ui.PhaseTracker {
 	pt.AddPhaseIf(cfg.Cluster.Registry.Enabled, phaseRegistry)
 	pt.AddPhaseIf(kind.HasTrustedCAs(cfg), phaseTrustedCAs)
 	pt.AddPhase(phaseCluster)
+	pt.AddPhaseIf(shouldPreloadImages(cfg), phaseImageCache)
 	pt.AddPhase(phaseConnect)
 	pt.AddPhaseIf(!upSkipCharts && len(getChartsForPhase(config.ChartPhasePrecrossplane)) > 0, phasePreCrossplane)
 	pt.AddPhaseIf(!upSkipCrossplane, phaseCrossplane)
@@ -132,6 +136,40 @@ func buildPhases() *ui.PhaseTracker {
 	pt.AddPhaseIf(!upSkipCompositions && len(cfg.Compositions.Sources) > 0, phaseCompositions)
 
 	return pt
+}
+
+// shouldPreloadImages determines if image pre-loading should be attempted.
+// We run the phase whenever we are installing Crossplane and image cache is not
+// explicitly disabled, so that "Pre-load images" appears in the UI and we
+// attempt to load/push images (PreloadImages no-ops when there are 0 images).
+func shouldPreloadImages(cfg *config.Config) bool {
+	// Skip if Crossplane installation is skipped
+	if upSkipCrossplane {
+		return false
+	}
+
+	// Skip only if image cache is explicitly disabled
+	if cfg.Crossplane.ImageCache != nil && !cfg.Crossplane.ImageCache.IsEnabled() {
+		return false
+	}
+
+	// Run preload phase whenever cache is enabled (or unset, default enabled):
+	// we have something to preload if any of these are true
+	hasProviders := len(cfg.Crossplane.Providers) > 0 && (cfg.Crossplane.ImageCache == nil || cfg.Crossplane.ImageCache.ShouldPreloadProviders())
+	hasCrossplane := cfg.Crossplane.ImageCache == nil || cfg.Crossplane.ImageCache.ShouldPreloadCrossplane()
+	hasAdditional := cfg.Crossplane.ImageCache != nil && len(cfg.Crossplane.ImageCache.AdditionalImages) > 0
+
+	if hasProviders || hasCrossplane || hasAdditional {
+		return true
+	}
+
+	// Even with nothing to preload, show the phase when user explicitly enabled
+	// image cache so the UI reflects their config (phase will no-op quickly)
+	if cfg.Crossplane.ImageCache != nil {
+		return true
+	}
+
+	return false
 }
 
 func runUp(cmd *cobra.Command, args []string) error {
@@ -389,7 +427,7 @@ func executeBootstrap(ctx context.Context, pt *ui.PhaseTracker, ctrl *ui.Dashboa
 		// Create cluster with progress updates
 		if ctrl != nil {
 			// Dashboard mode: send updates via controller
-			logger := kind.NewDashboardLogger(func(step string) {
+			logger := ui.NewKindDashboardLogger(func(step string) {
 				updateOp(step, -1)
 			})
 			if err := kind.CreateClusterWithProgress(ctx, cfg, logger); err != nil {
@@ -397,8 +435,8 @@ func executeBootstrap(ctx context.Context, pt *ui.PhaseTracker, ctrl *ui.Dashboa
 			}
 		} else {
 			// Print mode: use multi-step UI
-			if err := ui.RunClusterCreate(ctx, cfg.Cluster.Name, func(ctx context.Context, updates chan<- ui.StepUpdate) error {
-				logger := kind.NewLogger(updates)
+			if err := ui.RunClusterCreate(ctx, cfg.Cluster.Name, func(ctx context.Context, updates chan<- ui.StepUpdate, done <-chan struct{}) error {
+				logger := ui.NewKindLogger(updates, done)
 				return kind.CreateClusterWithProgress(ctx, cfg, logger)
 			}); err != nil {
 				return handleFailure(phaseCluster, fmt.Errorf("failed to create cluster: %w", err))
@@ -445,6 +483,101 @@ func executeBootstrap(ctx context.Context, pt *ui.PhaseTracker, ctrl *ui.Dashboa
 		if configErr != nil {
 			return handleFailure(phaseCluster, fmt.Errorf("failed to configure registry: %w", configErr))
 		}
+	}
+
+	// Phase: Pre-load images from local Docker
+	if pt.GetPhase(phaseImageCache) != nil {
+		startPhase(phaseImageCache)
+		updateOp("Checking for local images to pre-load...", -1)
+
+		var result *kind.PreloadResult
+		var imageCacheErr error
+
+		// First attempt: Check for local images
+		imageCacheFn := func(spinnerCtx context.Context) error {
+			var err error
+			result, err = kind.PreloadImages(spinnerCtx, cfg.Cluster.Name, cfg, func(msg string) {
+				if ctrl != nil {
+					updateOp(msg, -1)
+				} else {
+					log(msg)
+				}
+			})
+			return err
+		}
+
+		if ctrl != nil {
+			imageCacheErr = imageCacheFn(ctx)
+		} else {
+			imageCacheErr = ui.RunSpinnerWithContext(ctx, "Pre-loading images", imageCacheFn)
+		}
+
+		// If no images were loaded but some are missing, offer to pull them
+		if imageCacheErr == nil && result != nil && result.LoadedCount == 0 && len(result.MissingImages) > 0 {
+			shouldPull := upPullImages // Check flag first
+
+			// If flag not set, prompt in TTY mode
+			if !shouldPull && ui.IsTTY() {
+				// Show the list of missing images
+				log("\nNo local images found. The following images can be pulled for faster future bootstraps:\n")
+				for _, img := range result.MissingImages {
+					log(fmt.Sprintf("  - %s", img))
+				}
+				log("") // Empty line
+
+				confirm, err := ui.ConfirmWithContext(ctx, fmt.Sprintf("Pull %d images now?", len(result.MissingImages)))
+				if err == nil {
+					shouldPull = confirm
+				}
+			}
+
+			// Pull images if confirmed or flag set
+			if shouldPull {
+				updateOp("Pulling missing images...", -1)
+				pulledCount, pullErr := kind.PullImages(ctx, result.MissingImages, func(msg string) {
+					if ctrl != nil {
+						updateOp(msg, -1)
+					} else {
+						log(msg)
+					}
+				})
+
+				if pullErr != nil {
+					log(fmt.Sprintf("Warning: Image pulling encountered issues: %v", pullErr))
+				}
+
+				// If we successfully pulled any images, try loading them again
+				if pulledCount > 0 {
+					updateOp("Loading pulled images into cluster...", -1)
+					reloadFn := func(spinnerCtx context.Context) error {
+						_, err := kind.PreloadImages(spinnerCtx, cfg.Cluster.Name, cfg, func(msg string) {
+							if ctrl != nil {
+								updateOp(msg, -1)
+							} else {
+								log(msg)
+							}
+						})
+						return err
+					}
+
+					if ctrl != nil {
+						if err := reloadFn(ctx); err != nil {
+							log(fmt.Sprintf("Warning: failed to load pulled images: %v", err))
+						}
+					} else {
+						if err := ui.RunSpinnerWithContext(ctx, "Loading images", reloadFn); err != nil {
+							log(fmt.Sprintf("Warning: failed to load pulled images: %v", err))
+						}
+					}
+				}
+			}
+		}
+
+		// Don't fail bootstrap if image caching fails - just log warning
+		if imageCacheErr != nil {
+			log(fmt.Sprintf("Warning: Image pre-loading encountered issues: %v", imageCacheErr))
+		}
+		completePhase(phaseImageCache, "")
 	}
 
 	// Phase: Connect to cluster

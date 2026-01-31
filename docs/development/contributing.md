@@ -56,6 +56,16 @@ task lint
 golangci-lint run
 ```
 
+### Pre-commit Hook
+
+Install the pre-commit hook to automatically run checks before each commit:
+
+```bash
+task hooks:install
+```
+
+The hook runs `task check` (fmt, lint, test) and will prevent commits if any checks fail. Fix any issues before committing.
+
 ## Making Changes
 
 ### Create a Feature Branch

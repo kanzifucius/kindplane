@@ -9,6 +9,7 @@ import (
 
 	"github.com/kanzi/kindplane/internal/cmd/chart"
 	"github.com/kanzi/kindplane/internal/cmd/cluster"
+	"github.com/kanzi/kindplane/internal/cmd/compositions"
 	"github.com/kanzi/kindplane/internal/cmd/configcmd"
 	"github.com/kanzi/kindplane/internal/cmd/credentials"
 	"github.com/kanzi/kindplane/internal/cmd/provider"
@@ -70,6 +71,7 @@ func init() {
 	RootCmd.AddCommand(applyCmd)
 	RootCmd.AddCommand(doctorCmd)
 	RootCmd.AddCommand(cluster.ClusterCmd)
+	RootCmd.AddCommand(compositions.CompositionsCmd)
 	RootCmd.AddCommand(configcmd.ConfigCmd)
 	RootCmd.AddCommand(provider.ProviderCmd)
 	RootCmd.AddCommand(chart.ChartCmd)

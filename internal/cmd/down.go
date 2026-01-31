@@ -2,14 +2,15 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
 
 	"github.com/kanzi/kindplane/internal/kind"
 	"github.com/kanzi/kindplane/internal/registry"
+	"github.com/kanzi/kindplane/internal/ui"
 )
 
 var (
@@ -60,11 +61,12 @@ func runDown(cmd *cobra.Command, args []string) error {
 
 	// Confirm deletion unless --force
 	if !downForce {
-		confirm := false
-		prompt := &survey.Confirm{
-			Message: fmt.Sprintf("Delete cluster '%s'? This cannot be undone.", clusterName),
-		}
-		if err := survey.AskOne(prompt, &confirm); err != nil {
+		confirm, err := ui.ConfirmWithContext(ctx, fmt.Sprintf("Delete cluster '%s'? This cannot be undone.", clusterName))
+		if err != nil {
+			if errors.Is(err, ui.ErrCancelled) {
+				printWarn("Deletion cancelled")
+				return nil
+			}
 			printError("Prompt failed: %v", err)
 			return err
 		}
