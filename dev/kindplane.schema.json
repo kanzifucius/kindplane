@@ -1,0 +1,506 @@
+{
+  "$id": "https://kanzifucius.github.io/kindplane/dev/kindplane.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "definitions": {
+    "AWSCredentials": {
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string"
+        },
+        "source": {
+          "description": "Source: env (environment variables), file (credentials file), profile (AWS CLI profile)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "type": "object"
+    },
+    "AzureCredentials": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "description": "Source: env (environment variables), file (credentials file)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "type": "object"
+    },
+    "ChartConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "chart": {
+          "description": "Chart name in the repository",
+          "type": "string"
+        },
+        "createNamespace": {
+          "description": "Create namespace if not exists (default: true)",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "Helm release name",
+          "type": "string"
+        },
+        "namespace": {
+          "description": "Target namespace",
+          "type": "string"
+        },
+        "phase": {
+          "description": "Installation phase: pre-crossplane, post-crossplane, post-providers, final (default), post-eso (deprecated)",
+          "type": "string"
+        },
+        "repo": {
+          "description": "Helm repository URL",
+          "type": "string"
+        },
+        "timeout": {
+          "description": "Installation timeout (default: 5m)",
+          "type": "string"
+        },
+        "values": {
+          "description": "Inline values",
+          "type": "object"
+        },
+        "valuesFiles": {
+          "description": "Paths to values files",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "version": {
+          "description": "Chart version (optional, latest if omitted)",
+          "type": "string"
+        },
+        "wait": {
+          "description": "Wait for resources to be ready (default: true)",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "repo",
+        "chart",
+        "namespace"
+      ],
+      "type": "object"
+    },
+    "ClusterConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "extraMounts": {
+          "description": "Mount host paths into Kind nodes",
+          "items": {
+            "$ref": "#/definitions/ExtraMount"
+          },
+          "type": "array"
+        },
+        "ingress": {
+          "$ref": "#/definitions/IngressConfig",
+          "description": "Ingress controller readiness configuration\nWhen enabled, adds required labels and port mappings for ingress controllers"
+        },
+        "kubernetesVersion": {
+          "description": "Kubernetes version to use (optional, uses Kind default if not specified)",
+          "type": "string"
+        },
+        "name": {
+          "description": "Name of the Kind cluster",
+          "type": "string"
+        },
+        "nodeImage": {
+          "description": "Full Kind node image path (optional)\nUse when pulling images through a proxy registry like Artifactory\nIf not specified, defaults to \"kindest/node:v\u003ckubernetesVersion\u003e\"\nExamples:\n  - \"artifactory.example.com/kindest/node:v1.29.0\"\n  - \"artifactory.example.com/docker.io/kindest/node:v1.29.0\"\nNote: Ensure the proxy registry is configured in trustedCAs if using custom certificates",
+          "type": "string"
+        },
+        "nodes": {
+          "$ref": "#/definitions/NodesConfig",
+          "description": "Node configuration"
+        },
+        "portMappings": {
+          "description": "Port mappings from container to host\nFormat: containerPort:hostPort/protocol",
+          "items": {
+            "$ref": "#/definitions/PortMapping"
+          },
+          "type": "array"
+        },
+        "rawConfigPath": {
+          "description": "Optional: path to a raw Kind config file\nSettings from kindplane.yaml will be merged on top (kindplane wins)",
+          "type": "string"
+        },
+        "registry": {
+          "$ref": "#/definitions/RegistryConfig"
+        },
+        "trustedCAs": {
+          "$ref": "#/definitions/TrustedCAsConfig",
+          "description": "Trusted CA certificates for private registries and workloads"
+        }
+      },
+      "required": [
+        "name",
+        "kubernetesVersion",
+        "nodes",
+        "ingress"
+      ],
+      "type": "object"
+    },
+    "CompositionSource": {
+      "additionalProperties": false,
+      "properties": {
+        "branch": {
+          "description": "git branch",
+          "type": "string"
+        },
+        "path": {
+          "description": "local path or path within git repo",
+          "type": "string"
+        },
+        "repo": {
+          "description": "git repository URL",
+          "type": "string"
+        },
+        "type": {
+          "description": "local, git",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "path"
+      ],
+      "type": "object"
+    },
+    "CompositionsConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "sources": {
+          "description": "Sources to load compositions from",
+          "items": {
+            "$ref": "#/definitions/CompositionSource"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "CredentialsConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "aws": {
+          "$ref": "#/definitions/AWSCredentials",
+          "description": "AWS credentials configuration (uncomment if using provider-aws)"
+        },
+        "azure": {
+          "$ref": "#/definitions/AzureCredentials",
+          "description": "Azure credentials configuration (uncomment if using provider-azure)"
+        },
+        "kubernetes": {
+          "$ref": "#/definitions/KubernetesCredentials",
+          "description": "Kubernetes provider credentials"
+        }
+      },
+      "type": "object"
+    },
+    "CrossplaneConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "imageCache": {
+          "$ref": "#/definitions/ImageCacheConfig",
+          "description": "Image caching configuration"
+        },
+        "providers": {
+          "description": "Crossplane providers to install\nUse full OCI package path with version tag",
+          "items": {
+            "$ref": "#/definitions/ProviderConfig"
+          },
+          "type": "array"
+        },
+        "registryCaBundle": {
+          "$ref": "#/definitions/RegistryCaBundleConfig",
+          "description": "Registry CA bundle for Crossplane (optional)\nRequired when pulling Configuration and Provider packages from private registries with custom certificates\nMultiple certificates can be specified and will be bundled together into one ConfigMap"
+        },
+        "repo": {
+          "description": "Custom Helm repository URL (optional)\nUse when pulling charts from a private registry or air-gapped environment\nIf not specified, defaults to https://charts.crossplane.io/stable",
+          "type": "string"
+        },
+        "values": {
+          "description": "Inline Helm values for Crossplane installation (optional)\nThese values will be merged with any values files specified below",
+          "type": "object"
+        },
+        "valuesFiles": {
+          "description": "External values files (optional)\nValues from files are loaded first, then inline values override them",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "version": {
+          "description": "Crossplane version to install",
+          "type": "string"
+        }
+      },
+      "required": [
+        "version"
+      ],
+      "type": "object"
+    },
+    "ExtraMount": {
+      "additionalProperties": false,
+      "properties": {
+        "containerPath": {
+          "type": "string"
+        },
+        "hostPath": {
+          "type": "string"
+        },
+        "readOnly": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "hostPath",
+        "containerPath"
+      ],
+      "type": "object"
+    },
+    "ImageCacheConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "additionalImages": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "imageOverrides": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": "object"
+        },
+        "preloadCrossplane": {
+          "type": "boolean"
+        },
+        "preloadProviders": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "IngressConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "type": "object"
+    },
+    "KubernetesCredentials": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "description": "Source: incluster (use service account), kubeconfig (use kubeconfig file)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "type": "object"
+    },
+    "NodesConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "controlPlane": {
+          "type": "integer"
+        },
+        "workers": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "controlPlane",
+        "workers"
+      ],
+      "type": "object"
+    },
+    "PortMapping": {
+      "additionalProperties": false,
+      "properties": {
+        "containerPort": {
+          "type": "integer"
+        },
+        "hostPort": {
+          "type": "integer"
+        },
+        "protocol": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "containerPort",
+        "hostPort"
+      ],
+      "type": "object"
+    },
+    "ProviderConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "package": {
+          "description": "Full OCI package path with version tag (e.g., xpkg.upbound.io/upbound/provider-aws:v1.1.0)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "package"
+      ],
+      "type": "object"
+    },
+    "RegistryCA": {
+      "additionalProperties": false,
+      "properties": {
+        "caFile": {
+          "description": "Path to CA certificate file on the host",
+          "type": "string"
+        },
+        "host": {
+          "description": "Registry host (e.g., \"registry.example.com:5000\" or \"*.internal.company.com\")",
+          "type": "string"
+        }
+      },
+      "required": [
+        "host",
+        "caFile"
+      ],
+      "type": "object"
+    },
+    "RegistryCaBundleConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "caFiles": {
+          "description": "Direct paths to CA files (multiple allowed)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "workloadCARefs": {
+          "description": "Reference existing workload CAs by name (must be defined in cluster.trustedCAs.workloads)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "RegistryConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "persistent": {
+          "type": "boolean"
+        },
+        "port": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "type": "object"
+    },
+    "TrustedCAsConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "registries": {
+          "description": "CA certificates for private container registries (trusted by containerd)",
+          "items": {
+            "$ref": "#/definitions/RegistryCA"
+          },
+          "type": "array"
+        },
+        "workloads": {
+          "description": "CA certificates mounted for workloads to trust",
+          "items": {
+            "$ref": "#/definitions/WorkloadCA"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "WorkloadCA": {
+      "additionalProperties": false,
+      "properties": {
+        "caFile": {
+          "description": "Path to CA certificate file on the host",
+          "type": "string"
+        },
+        "name": {
+          "description": "Identifier for the CA (used in the mount path)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "caFile"
+      ],
+      "type": "object"
+    }
+  },
+  "description": "Configuration schema for kindplane.yaml - a tool for bootstrapping Kind clusters with Crossplane",
+  "properties": {
+    "charts": {
+      "description": "Additional Helm charts to install\nPhases: pre-crossplane, post-crossplane, post-providers, final (default), post-eso (deprecated)",
+      "items": {
+        "$ref": "#/definitions/ChartConfig"
+      },
+      "type": "array"
+    },
+    "cluster": {
+      "$ref": "#/definitions/ClusterConfig"
+    },
+    "compositions": {
+      "$ref": "#/definitions/CompositionsConfig",
+      "description": "Crossplane compositions and XRDs"
+    },
+    "credentials": {
+      "$ref": "#/definitions/CredentialsConfig"
+    },
+    "crossplane": {
+      "$ref": "#/definitions/CrossplaneConfig"
+    }
+  },
+  "required": [
+    "cluster",
+    "crossplane",
+    "credentials",
+    "compositions"
+  ],
+  "title": "Kindplane Configuration",
+  "type": "object"
+}
