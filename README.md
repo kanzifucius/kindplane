@@ -153,7 +153,7 @@ kindplane init
 
 kindplane provides a JSON Schema for configuration validation and IDE autocomplete. Configuration files generated with `kindplane init` automatically include the schema reference.
 
-**Schema Versioning**
+#### Schema Versioning
 
 Schemas are versioned and available via GitHub Pages:
 

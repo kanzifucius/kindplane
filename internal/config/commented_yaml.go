@@ -42,6 +42,14 @@ func buildNode(val reflect.Value, typ reflect.Type) (*yaml.Node, error) {
 	default:
 		// For unknown types, fall back to standard marshalling
 		var node yaml.Node
+		// Guard against invalid reflect.Value which would panic on Interface()
+		if !val.IsValid() {
+			return &yaml.Node{
+				Kind:  yaml.ScalarNode,
+				Tag:   "!!null",
+				Value: "null",
+			}, nil
+		}
 		if err := node.Encode(val.Interface()); err != nil {
 			return nil, fmt.Errorf("failed to encode value: %w", err)
 		}

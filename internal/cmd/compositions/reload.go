@@ -102,10 +102,10 @@ func runReload(cmd *cobra.Command, args []string) error {
 		for _, source := range cfg.Compositions.Sources {
 			phaseName := formatSourceName(source)
 
-			// Check for cancellation
+			// Check for cancellation - return ctx.Err() directly so callers can detect context.Canceled
 			select {
 			case <-ctx.Done():
-				return fmt.Errorf("reload cancelled: %w", ctx.Err())
+				return ctx.Err()
 			default:
 			}
 
