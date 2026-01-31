@@ -155,11 +155,12 @@ tasks:
   # =============================================================================
 
   check:
-    desc: Run all checks (fmt, lint, test)
+    desc: Run all checks (fmt, lint, test, schema)
     cmds:
       - task: fmt
       - task: lint
       - task: test
+      - task: schema:generate
 
   # =============================================================================
   # Release tasks
