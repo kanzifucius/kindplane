@@ -18,7 +18,7 @@ By default, kindplane automatically checks your local Docker daemon for Crosspla
 
 When running in a terminal (TTY mode), if kindplane detects that **none** of the expected images are available locally, it will display the missing images and prompt you to pull them:
 
-```
+```text
 No local images found. The following images can be pulled for faster future bootstraps:
 
   - crossplane/crossplane:v1.15.0
@@ -115,7 +115,7 @@ kindplane uses naming conventions to automatically derive controller image names
 ### Convention Rules
 
 **Provider Packages:**
-```
+```text
 Package: xpkg.upbound.io/upbound/provider-aws:v1.1.0
 
 Derived Images:
@@ -124,7 +124,7 @@ Derived Images:
 ```
 
 **Crossplane Core:**
-```
+```text
 Version: "1.15.0"
 
 Derived Images:
@@ -154,7 +154,7 @@ crossplane:
 When `cluster.registry.enabled: false`, images are loaded directly into Kind nodes.
 
 **Workflow:**
-```
+```text
 Local Docker → docker save → Load into Kind nodes
 ```
 
@@ -178,7 +178,7 @@ crossplane:
 When `cluster.registry.enabled: true`, images are pushed to the local registry.
 
 **Workflow:**
-```
+```text
 Local Docker → Tag for registry → Push to localhost:5001 → Kind pulls from registry
 ```
 

@@ -63,7 +63,7 @@ By default, kindplane checks your local Docker daemon for Crossplane and provide
 
 When running interactively and no images are found:
 
-```
+```text
 No local images found. The following images can be pulled for faster future bootstraps:
 
   - crossplane/crossplane:v1.15.0

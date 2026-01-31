@@ -561,9 +561,13 @@ func executeBootstrap(ctx context.Context, pt *ui.PhaseTracker, ctrl *ui.Dashboa
 					}
 
 					if ctrl != nil {
-						_ = reloadFn(ctx)
+						if err := reloadFn(ctx); err != nil {
+							log(fmt.Sprintf("Warning: failed to load pulled images: %v", err))
+						}
 					} else {
-						_ = ui.RunSpinnerWithContext(ctx, "Loading images", reloadFn)
+						if err := ui.RunSpinnerWithContext(ctx, "Loading images", reloadFn); err != nil {
+							log(fmt.Sprintf("Warning: failed to load pulled images: %v", err))
+						}
 					}
 				}
 			}

@@ -198,7 +198,7 @@ crossplane:
 
 kindplane automatically derives controller image names from provider packages and checks if they exist in your local Docker daemon:
 
-```
+```text
 Provider Package:
   xpkg.upbound.io/upbound/provider-aws:v1.1.0
 
