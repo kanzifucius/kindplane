@@ -52,7 +52,7 @@
           "type": "string"
         },
         "phase": {
-          "description": "Installation phase: pre-crossplane, post-crossplane, post-providers, post-eso (default)",
+          "description": "Installation phase: pre-crossplane, post-crossplane, post-providers, final (default), post-eso (deprecated)",
           "type": "string"
         },
         "repo": {
