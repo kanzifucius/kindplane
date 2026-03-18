@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // -----------------------------------------------------------------------------
@@ -721,7 +722,7 @@ func (m DashboardModel) renderCurrentOperation(width int) string {
 	box := StyleDashboardOperationBox.Width(width - 2).Render(content)
 
 	// Add title to border
-	box = insertBorderTitle(box, title, StyleBold)
+	box = insertBorderTitle(box, title, StyleBold, ColorSecondary)
 
 	return box
 }
@@ -753,7 +754,7 @@ func (m DashboardModel) renderLogPanel(width int) string {
 	}
 
 	// Add title to border
-	box = insertBorderTitle(box, title, StyleMuted)
+	box = insertBorderTitle(box, title, StyleMuted, ColorMuted)
 
 	return box
 }
@@ -762,7 +763,7 @@ func (m DashboardModel) renderPodsPanel(width int) string {
 	if len(m.pods) == 0 {
 		content := StyleMuted.Render("No pods yet...")
 		box := StyleDashboardLogBox.Width(width - 2).Render(content)
-		box = insertBorderTitle(box, "Pods", StyleMuted)
+		box = insertBorderTitle(box, "Pods", StyleMuted, ColorMuted)
 		return box
 	}
 
@@ -830,13 +831,15 @@ func (m DashboardModel) renderPodsPanel(width int) string {
 
 	content := strings.Join(rows, "\n")
 	box := StyleDashboardLogBox.Width(width - 2).Render(content)
-	box = insertBorderTitle(box, "Pods", StyleMuted)
+	box = insertBorderTitle(box, "Pods", StyleMuted, ColorMuted)
 
 	return box
 }
 
-// insertBorderTitle inserts a title into the top border of a box
-func insertBorderTitle(box, title string, style lipgloss.Style) string {
+// insertBorderTitle inserts a title into the top border of a box.
+// borderFg is the border foreground color so the reconstructed border
+// characters keep the same color as the original box border.
+func insertBorderTitle(box, title string, style lipgloss.Style, borderFg lipgloss.TerminalColor) string {
 	lines := strings.Split(box, "\n")
 	if len(lines) == 0 {
 		return box
@@ -847,31 +850,30 @@ func insertBorderTitle(box, title string, style lipgloss.Style) string {
 	styledTitle := style.Render(titleText)
 	titleWidth := lipgloss.Width(titleText)
 
-	// We need to find where to insert the title (after the first border character)
-	// The first line is the top border, typically: ┌──────────────┐
-	// We want to replace some dashes after position 1: ┌─ Title ─────┐
-
-	if len(firstLine) > titleWidth+4 {
-		// Find the visual width of the first line
-		lineWidth := lipgloss.Width(firstLine)
-		if lineWidth > titleWidth+4 {
-			// Build new first line: border char + title + remaining border
-			// Since the border might have ANSI codes, we need to be careful
-			// Simple approach: take first rune, add title, pad with border chars
-			runes := []rune(firstLine)
-			if len(runes) > 2 {
-				// Get first border character
-				firstChar := string(runes[0])
-				lastChar := string(runes[len(runes)-1])
-
-				// Calculate how many border chars we need after the title
-				remainingWidth := lineWidth - 2 - titleWidth // -2 for first and last border chars
-
-				// Build the new line
-				lines[0] = firstChar + styledTitle + strings.Repeat("─", remainingWidth) + lastChar
-			}
-		}
+	// Find the visual width of the first line
+	lineWidth := lipgloss.Width(firstLine)
+	if lineWidth <= titleWidth+4 {
+		return box
 	}
+
+	// Strip ANSI escape sequences so we can read the actual border characters.
+	// The raw line is something like: ┌──────────────┐
+	stripped := ansi.Strip(firstLine)
+	runes := []rune(stripped)
+	if len(runes) < 3 {
+		return box
+	}
+
+	borderStyle := lipgloss.NewStyle().Foreground(borderFg)
+	firstChar := borderStyle.Render(string(runes[0]))           // e.g. ┌
+	lastChar := borderStyle.Render(string(runes[len(runes)-1])) // e.g. ┐
+	borderChar := string(runes[1])                              // e.g. ─
+
+	// Calculate how many border chars we need after the title
+	remainingWidth := lineWidth - 2 - titleWidth // -2 for first and last border chars
+
+	// Build the new line with properly styled border characters
+	lines[0] = firstChar + styledTitle + borderStyle.Render(strings.Repeat(borderChar, remainingWidth)) + lastChar
 
 	return strings.Join(lines, "\n")
 }
@@ -989,7 +991,7 @@ func (m DashboardModel) renderCompletionView(width int) string {
 
 	phaseContent := strings.Join(phaseLines, "\n")
 	phaseBox := StyleDashboardBox.Width(width - 2).Render(phaseContent)
-	phaseBox = insertBorderTitle(phaseBox, "Phases", StyleDashboardPhaseHeader)
+	phaseBox = insertBorderTitle(phaseBox, "Phases", StyleDashboardPhaseHeader, ColorBorder)
 	sections = append(sections, phaseBox)
 
 	// Result message and next steps (only for success)
