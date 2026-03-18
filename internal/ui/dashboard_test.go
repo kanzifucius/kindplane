@@ -4,6 +4,9 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestNewDashboardModel(t *testing.T) {
@@ -318,6 +321,97 @@ func TestDashboardModel_WithNextStepHint(t *testing.T) {
 	if model.nextStepHint != "kubectl get pods" {
 		t.Errorf("expected nextStepHint 'kubectl get pods', got '%s'", model.nextStepHint)
 	}
+}
+
+func TestInsertBorderTitleColorHandling(t *testing.T) {
+	borderFg := lipgloss.Color("#9CA3AF")
+	style := lipgloss.NewStyle().Foreground(lipgloss.Color("#9CA3AF"))
+
+	tests := []struct {
+		name     string
+		box      string // first line is the border
+		title    string
+		wantLast rune // expected last border rune on the first line
+	}{
+		{
+			name:     "plain border short title",
+			box:      "┌──────────────┐\n│ content      │\n└──────────────┘",
+			title:    "Hi",
+			wantLast: '┐',
+		},
+		{
+			name:     "plain border longer title",
+			box:      "┌──────────────┐\n│ content      │\n└──────────────┘",
+			title:    "Pods",
+			wantLast: '┐',
+		},
+		{
+			name:     "ANSI-colored border short title",
+			box:      "\x1b[38;2;156;163;175m┌──────────────┐\x1b[0m\n│ content      │\n└──────────────┘",
+			title:    "Hi",
+			wantLast: '┐',
+		},
+		{
+			name:     "ANSI-colored border longer title",
+			box:      "\x1b[38;2;156;163;175m┌──────────────┐\x1b[0m\n│ content      │\n└──────────────┘",
+			title:    "Pods",
+			wantLast: '┐',
+		},
+		{
+			name:     "ANSI-colored border wide title",
+			box:      "\x1b[38;2;156;163;175m┌────────────────────┐\x1b[0m\n│ content            │\n└────────────────────┘",
+			title:    "Long Title Here",
+			wantLast: '┐',
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := insertBorderTitle(tt.box, tt.title, style, borderFg)
+			lines := splitLines(result)
+			if len(lines) == 0 {
+				t.Fatal("insertBorderTitle returned empty result")
+			}
+
+			firstLine := lines[0]
+			stripped := ansi.Strip(firstLine)
+			runes := []rune(stripped)
+			if len(runes) == 0 {
+				t.Fatal("first line is empty after stripping ANSI")
+			}
+
+			lastRune := runes[len(runes)-1]
+			if lastRune != tt.wantLast {
+				t.Errorf("last rune = %q (%U), want %q (%U)",
+					lastRune, lastRune, tt.wantLast, tt.wantLast)
+			}
+
+			// The title should appear in the first line
+			if !findSubstring(stripped, tt.title) {
+				t.Errorf("title %q not found in first line %q", tt.title, stripped)
+			}
+
+			// No stray 'm' from ANSI escape at the end
+			if lastRune == 'm' {
+				t.Error("first line ends with 'm', likely an ANSI escape leak")
+			}
+		})
+	}
+}
+
+func splitLines(s string) []string {
+	var lines []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			lines = append(lines, s[start:i])
+			start = i + 1
+		}
+	}
+	if start < len(s) {
+		lines = append(lines, s[start:])
+	}
+	return lines
 }
 
 // Helper function
